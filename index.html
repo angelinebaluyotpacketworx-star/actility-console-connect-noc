@@ -1,0 +1,3706 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Actility X Console Connect NOC</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#141a22; --panel2:#1b232e; --panel3:#232d3a; --line:#2a3441;
+    --text:#e6edf3; --sub:#8b98a5; --accent:#2ec4b6; --accent2:#ff9f1c;
+    --planning:#c792ea; --danger:#e5484d; --warn:#ffb700;
+    --conf-hi:#2ecc40; --conf-med:#ffb700; --conf-lo:#ff6a30;
+    --overlap:#00e5ff;
+    --mono: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);}
+  #app{display:flex;flex-direction:column;height:100vh;}
+  #tabbar{display:flex;background:var(--panel);border-bottom:1px solid var(--line);flex-shrink:0;}
+  .tabbtn{
+    padding:12px 22px;font-size:12.5px;font-weight:600;color:var(--sub);cursor:pointer;
+    border-bottom:2px solid transparent;letter-spacing:0.02em;background:none;border:none;
+    font-family:var(--sans);
+  }
+  .tabbtn.active[data-tab="live"]{color:var(--accent);border-bottom-color:var(--accent);}
+  .tabbtn.active[data-tab="planning"]{color:var(--planning);border-bottom-color:var(--planning);}
+  .tabbtn:hover{color:var(--text);}
+  #main{flex:1;display:flex;overflow:hidden;position:relative;}
+  .panel{display:none;flex:1;flex-direction:row;}
+  .panel.active{display:flex;}
+  .sidebar{
+    width:420px;min-width:380px;background:var(--panel);border-right:1px solid var(--line);
+    display:flex;flex-direction:column;overflow:hidden;
+  }
+  #main.sidebar-hidden .sidebar{display:none;}
+  #sidebarToggle{
+    background:var(--panel2);border:1px solid var(--line);color:var(--sub);
+    padding:6px 10px;font-size:13px;margin-left:auto;margin-right:8px;align-self:center;
+    border-radius:5px;
+  }
+  #sidebarToggle:hover{color:var(--text);border-color:var(--text);}
+  .sidebar-scroll{overflow-y:auto;padding:18px;flex:1;}
+  h1{font-size:15px;letter-spacing:0.02em;margin:0 0 2px 0;color:var(--text);}
+  .subtitle{font-size:11px;color:var(--sub);margin-bottom:14px;}
+  .section-label{
+    font-size:10.5px;text-transform:uppercase;letter-spacing:0.08em;margin:16px 0 8px 0;font-weight:600;
+  }
+  .section-label.live{color:var(--accent);}
+  .section-label.planning{color:var(--planning);}
+  label{display:block;font-size:11.5px;color:var(--sub);margin-bottom:3px;margin-top:9px;}
+  input, select, textarea{
+    width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    padding:7px 9px;border-radius:5px;font-size:13px;font-family:var(--mono);
+  }
+  select{font-family:var(--sans);}
+  input:focus, select:focus, textarea:focus{outline:none;border-color:var(--accent);}
+  .row2{display:flex;gap:8px;}
+  .row2 > div{flex:1;}
+  button{cursor:pointer;border:none;border-radius:5px;font-size:12.5px;font-weight:600;padding:9px 12px;font-family:var(--sans);}
+  .addBtn.live{width:100%;background:var(--accent);color:#04211d;margin-top:14px;}
+  .addBtn.live:hover{background:#3ddac9;}
+  .addBtn.planning{width:100%;background:var(--planning);color:#2a0a3d;margin-top:14px;}
+  .addBtn.planning:hover{background:#d9aefc;}
+  .ghost-btn{background:transparent;border:1px solid var(--line);color:var(--sub);width:100%;margin-top:6px;}
+  .ghost-btn:hover{border-color:var(--text);color:var(--text);}
+  .gw-item{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:8px 10px;margin-bottom:6px;font-size:12px;cursor:pointer;transition:border-color 0.15s;}
+  .gw-item:hover{border-color:var(--accent);}
+  .gw-item.selected{border-color:var(--accent);background:var(--panel3);}
+  .gw-item .name{font-weight:600;color:var(--text);margin-bottom:2px;padding-right:60px;}
+  .gw-item .meta{color:var(--sub);font-family:var(--mono);font-size:10.5px;line-height:1.5;}
+  .gw-item .notes{color:#b995e0;font-size:10.5px;font-style:italic;margin-top:3px;line-height:1.4;}
+  .gw-item .actions{float:right;display:flex;gap:8px;}
+  .gw-item .action-btn{color:var(--sub);cursor:pointer;font-size:11px;font-weight:600;background:none;border:none;padding:0;}
+  .gw-item .action-btn:hover{color:var(--accent);}
+  .gw-item .action-btn.del:hover{color:var(--danger);}
+  .gw-item .tags{margin-top:4px;}
+  .badge{display:inline-block;padding:1px 6px;border-radius:3px;font-size:9.5px;font-weight:700;margin-right:4px;vertical-align:middle;}
+  .badge.indoor{background:#1e2a3f;color:#7fb8ff;}
+  .badge.outdoor{background:#1e3a24;color:#7fd88f;}
+  .badge.env{background:#2a2438;color:#b995e0;}
+  .badge.site{background:#1a2f3f;color:#7fcfe5;}
+  .badge.rfregion{background:#2f1a3f;color:#c792ea;}
+  .badge.conf-hi{background:#1a3d1e;color:var(--conf-hi);}
+  .badge.conf-med{background:#3a2f0e;color:var(--conf-med);}
+  .badge.conf-lo{background:#3d1e14;color:var(--conf-lo);}
+  .badge.warn{background:#3a2a12;color:var(--warn);}
+  .badge.sim-active{background:#1a3d1e;color:var(--conf-hi);}
+  .badge.sim-inactive{background:#3d1e14;color:var(--danger);}
+  .badge.sim-unknown{background:#2a2f38;color:var(--sub);}
+  .badge.diag-danger{background:#3d1e14;color:var(--danger);cursor:help;}
+  .badge.diag-warn{background:#3a2a12;color:var(--warn);cursor:help;}
+  .map-wrap{flex:1;position:relative;}
+  .leaflet-map{position:absolute;top:0;left:0;right:0;bottom:0;}
+  .legend{
+    position:absolute;bottom:24px;right:24px;background:rgba(13,17,23,0.94);
+    border:1px solid var(--line);border-radius:8px;padding:12px 14px;font-size:11px;color:var(--text);
+    z-index:1000;width:270px;
+  }
+  .legend b{font-size:12px;}
+  .swatch{display:inline-block;width:11px;height:11px;border-radius:2px;margin-right:6px;vertical-align:middle;}
+  .status{
+    position:absolute;top:16px;left:16px;background:rgba(13,17,23,0.9);border:1px solid var(--line);
+    border-radius:6px;padding:6px 12px;font-size:11px;color:var(--sub);z-index:1000;max-width:520px;
+  }
+  .status b{color:var(--accent);}
+  .status.planning-mode b{color:var(--planning);}
+  .stats-bar{
+    position:absolute;top:16px;right:16px;background:rgba(13,17,23,0.9);border:1px solid var(--line);
+    border-radius:6px;padding:8px 12px;font-size:11px;color:var(--text);z-index:1000;
+    display:flex;gap:14px;
+  }
+  .stats-bar .stat{display:flex;flex-direction:column;align-items:center;}
+  .stats-bar .stat .num{font-size:16px;font-weight:700;color:var(--accent);font-family:var(--mono);}
+  .stats-bar .stat.warn .num{color:var(--warn);}
+  .stats-bar .stat.overlap .num{color:var(--overlap);}
+  .stats-bar .stat .lbl{font-size:9.5px;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;}
+  .stats-bar .stat.clickable{cursor:pointer;padding:4px 6px;margin:-4px -6px;border-radius:5px;border:1px solid transparent;transition:background 0.15s,border-color 0.15s;}
+  .stats-bar .stat.clickable:hover{background:rgba(255,255,255,0.08);}
+  .stats-bar .stat.clickable.filter-on{background:rgba(46,196,182,0.16);border-color:var(--accent);}
+  .stats-bar .stat.clickable.filter-on .lbl{color:var(--accent);}
+  .map-tools{
+    position:absolute;top:70px;left:16px;background:rgba(13,17,23,0.9);border:1px solid var(--line);
+    border-radius:6px;padding:6px;font-size:11px;z-index:1000;display:flex;flex-direction:column;gap:4px;
+  }
+  .map-tool-btn{
+    background:transparent;color:var(--sub);border:1px solid transparent;border-radius:4px;padding:6px 10px;
+    font-size:11.5px;font-weight:600;cursor:pointer;text-align:left;display:flex;align-items:center;gap:6px;
+    font-family:var(--sans);
+  }
+  .map-tool-btn:hover{background:var(--panel2);color:var(--text);}
+  .map-tool-btn.active{background:var(--panel2);color:var(--accent);border-color:var(--accent);}
+  .empty-hint{color:var(--sub);font-size:11.5px;font-style:italic;padding:10px 0;}
+  .info-box{
+    background:var(--panel2);border:1px solid var(--line);border-left:3px solid var(--planning);
+    border-radius:4px;padding:9px 10px;font-size:11px;color:var(--sub);margin-bottom:14px;line-height:1.5;
+  }
+  .caveat{
+    background:#2a1e0e;border:1px solid #4a3820;border-radius:4px;padding:8px 10px;
+    font-size:10.5px;color:#d4b075;margin-top:12px;line-height:1.5;
+  }
+  .search-box{
+    position:relative;
+  }
+  .search-box input{padding-left:28px;}
+  .search-box::before{
+    content:'🔍';position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:11px;pointer-events:none;z-index:1;
+  }
+  .search-clear{
+    position:absolute;right:7px;top:50%;transform:translateY(-50%);cursor:pointer;color:var(--sub);
+    background:none;border:none;padding:2px 6px;font-size:14px;
+  }
+  .search-clear:hover{color:var(--danger);}
+  .filter-chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;}
+  .chip{
+    background:var(--panel2);border:1px solid var(--line);color:var(--sub);
+    padding:3px 9px;border-radius:12px;font-size:10.5px;cursor:pointer;font-weight:600;
+  }
+  .chip.active{background:var(--accent);color:#04211d;border-color:var(--accent);}
+  .chip:hover:not(.active){border-color:var(--text);color:var(--text);}
+  .measure-label{
+    background:rgba(13,17,23,0.92);color:var(--text);padding:3px 8px;border-radius:4px;
+    font-size:11px;font-family:var(--mono);border:1px solid var(--accent);white-space:nowrap;
+  }
+  .edit-form{background:var(--panel3);border:1px solid var(--accent);border-radius:6px;padding:10px;margin-bottom:6px;}
+  .edit-form .row-actions{display:flex;gap:6px;margin-top:8px;}
+  .edit-form .row-actions button{flex:1;font-size:11.5px;padding:6px 10px;}
+  .save-btn{background:var(--accent);color:#04211d;}
+  .cancel-btn{background:transparent;border:1px solid var(--line);color:var(--sub);}
+  ::-webkit-scrollbar{width:8px;}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:4px;}
+
+  /* ===== Floor Plan sub-mode ===== */
+  .submode-tabs{display:flex;background:var(--panel2);border-radius:6px;padding:3px;margin-bottom:14px;gap:2px;}
+  .submode-tab{
+    flex:1;padding:7px 10px;font-size:11.5px;font-weight:600;background:none;color:var(--sub);
+    border:none;border-radius:4px;cursor:pointer;font-family:var(--sans);
+  }
+  .submode-tab.active{background:var(--planning);color:#2a0a3d;}
+  .fp-canvas-wrap{
+    flex:1;position:relative;overflow:hidden;background:#0a0d13;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #fp_canvas{
+    position:relative;display:none;box-shadow:0 0 40px rgba(0,0,0,0.6);cursor:crosshair;
+  }
+  #fp_canvas.mode-move{cursor:move;}
+  #fp_canvas.mode-place{cursor:crosshair;}
+  #fp_canvas.mode-wall{cursor:crosshair;}
+  #fp_img{display:block;max-width:100%;max-height:100%;pointer-events:none;user-select:none;}
+  #fp_svg{position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;}
+  #fp_svg .interactive{pointer-events:auto;}
+  .fp-empty{
+    color:var(--sub);font-size:14px;font-style:italic;text-align:center;padding:40px;
+    max-width:400px;line-height:1.6;
+  }
+  .fp-empty b{color:var(--planning);}
+  .fp-toolbar{
+    position:absolute;top:16px;left:50%;transform:translateX(-50%);
+    background:rgba(13,17,23,0.94);border:1px solid var(--line);border-radius:8px;
+    padding:8px;display:flex;gap:4px;z-index:1000;
+  }
+  .fp-tool-btn{
+    background:transparent;color:var(--sub);border:1px solid transparent;border-radius:5px;
+    padding:7px 12px;font-size:12px;font-weight:600;cursor:pointer;font-family:var(--sans);
+  }
+  .fp-tool-btn:hover{background:var(--panel2);color:var(--text);}
+  .fp-tool-btn.active{background:var(--planning);color:#2a0a3d;border-color:var(--planning);}
+  .fp-scale-info{
+    position:absolute;bottom:16px;left:16px;background:rgba(13,17,23,0.9);
+    border:1px solid var(--line);border-radius:6px;padding:6px 12px;font-size:11px;
+    color:var(--sub);z-index:1000;font-family:var(--mono);
+  }
+  .fp-honesty-watermark{
+    position:absolute;top:70px;left:16px;background:rgba(42,30,14,0.94);
+    border:1px solid #4a3820;border-radius:6px;padding:8px 12px;font-size:10.5px;
+    color:#d4b075;z-index:999;max-width:280px;line-height:1.5;
+  }
+  .fp-honesty-watermark b{color:#e5a45c;}
+  .fp-gw-marker{
+    fill:#c792ea;stroke:white;stroke-width:2;cursor:pointer;
+  }
+  .fp-gw-marker.indoor{fill:#7fb8ff;}
+  .fp-gw-label{
+    fill:#111;font-size:9px;font-weight:bold;text-anchor:middle;pointer-events:none;
+    font-family:var(--sans);
+  }
+  .fp-coverage-band{opacity:0.15;pointer-events:none;}
+  .fp-wall{stroke:#e5a45c;stroke-width:3;fill:none;stroke-linecap:round;}
+  .fp-wall.concrete{stroke:#a06030;stroke-width:5;}
+  .fp-wall.drywall{stroke:#e5a45c;stroke-width:3;}
+  .fp-wall.glass{stroke:#7fcfe5;stroke-width:2;stroke-dasharray:6,4;}
+  .fp-wall.metal{stroke:#e5484d;stroke-width:4;}
+  .fp-wall-preview{stroke:#c792ea;stroke-width:2;stroke-dasharray:4,4;fill:none;}
+  .fp-cal-marker{fill:#00e5ff;stroke:white;stroke-width:2;}
+  .fp-cal-line{stroke:#00e5ff;stroke-width:2;stroke-dasharray:4,4;fill:none;}
+  .fp-item-mini{
+    background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:6px 8px;
+    margin-bottom:5px;font-size:11px;
+  }
+  .fp-item-mini .mini-del{float:right;color:var(--danger);cursor:pointer;font-weight:600;}
+  .modal-overlay{
+    position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.7);z-index:2000;
+    display:flex;align-items:center;justify-content:center;
+  }
+  .modal{
+    background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:20px;
+    width:400px;max-width:90vw;
+  }
+  .modal h2{margin:0 0 10px 0;font-size:15px;color:var(--text);}
+  .modal p{color:var(--sub);font-size:12px;margin:0 0 14px 0;line-height:1.5;}
+  .modal .row-actions{display:flex;gap:8px;margin-top:14px;}
+  .modal .row-actions button{flex:1;padding:9px;}
+
+  /* ===== NOC Dashboard ===== */
+  .tabbtn.active[data-tab="noc"]{color:var(--danger);border-bottom-color:var(--danger);}
+  #panel-noc.active{flex-direction:column;overflow-y:auto;}
+  .noc-wrap{padding:24px 32px 40px;max-width:1300px;margin:0 auto;width:100%;}
+  .noc-kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin:10px 0 4px;}
+  .noc-kpi{background:var(--panel2);border:1px solid var(--line);border-radius:6px;padding:12px 10px;text-align:center;}
+  .noc-kpi .num{font-size:24px;font-weight:700;font-family:var(--mono);color:var(--accent);}
+  .noc-kpi.warn .num{color:var(--warn);}
+  .noc-kpi.danger .num{color:var(--danger);}
+  .noc-kpi .lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-top:3px;}
+  .noc-table{width:100%;border-collapse:collapse;font-size:12px;margin:4px 0 6px;}
+  .noc-table th{text-align:left;color:var(--sub);font-size:10px;text-transform:uppercase;letter-spacing:0.05em;padding:6px 8px;border-bottom:1px solid var(--line);}
+  .noc-table td{padding:6px 8px;border-bottom:1px solid var(--line);color:var(--text);}
+  .noc-table tr:last-child td{border-bottom:none;}
+  .noc-banner{background:#3a1414;border:1px solid var(--danger);border-radius:6px;padding:9px 14px;font-size:11.5px;color:#ff9a9a;margin-bottom:14px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .noc-banner.info{background:#1b2a1e;border-color:var(--accent);color:#a9e8c9;}
+  .noc-banner button{background:transparent;border:1px solid #ff9a9a;color:#ff9a9a;padding:4px 10px;border-radius:5px;font-size:11px;}
+  .noc-two-col{display:grid;grid-template-columns:1fr 1fr;gap:24px;}
+  @media (max-width:900px){ .noc-two-col{grid-template-columns:1fr;} }
+  .badge.stale{background:#3a2a12;color:var(--warn);}
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="tabbar">
+    <button class="tabbtn active" data-tab="live" onclick="switchTab('live')">📡 Live Coverage (Actility/ThingPark)</button>
+    <button class="tabbtn" data-tab="planning" onclick="switchTab('planning')">🗺️ Project Planning (POC)</button>
+    <button class="tabbtn" data-tab="noc" onclick="switchTab('noc')">🚨 NOC Dashboard</button>
+    <button id="sidebarToggle" onclick="toggleSidebar()" title="Show/hide the sidebar panel">☰ Panel</button>
+  </div>
+
+  <div id="main" class="sidebar-hidden">
+    <!-- LIVE COVERAGE PANEL -->
+    <div class="panel active" id="panel-live">
+      <div class="sidebar">
+        <div class="sidebar-scroll">
+          <h1>Live Coverage</h1>
+          <div class="subtitle">Deployed gateways &middot; data from Actility ThingPark</div>
+
+          <div class="section-label live">Search & Filter</div>
+          <div class="search-box">
+            <input type="text" id="live_search" placeholder="Search name / LRR-ID / site..." oninput="debouncedRenderTab('live')">
+            <button class="search-clear" onclick="clearSearch('live')">×</button>
+          </div>
+          <div class="filter-chips" id="live_site_chips"></div>
+          <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px;">RF Region</div>
+          <input type="text" id="live_rfregion_search" placeholder="Search RF regions..." oninput="renderRfRegionChips('live')" style="margin-top:4px;">
+          <div class="filter-chips" id="live_rfregion_chips" style="margin-top:6px;"></div>
+          <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px;">Tags (Actility)</div>
+          <input type="text" id="live_tag_search" placeholder="Search tags to filter by project..." oninput="renderTagChips('live')" style="margin-top:4px;">
+          <div class="filter-chips" id="live_tag_chips" style="margin-top:6px;"></div>
+
+          <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+            <span>Add Deployed Gateway</span>
+            <button type="button" id="addgw_toggle_btn" onclick="toggleAddGwSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+          </div>
+          <div id="addgw_section_body">
+          <label>Name</label>
+          <input id="live_name" placeholder="e.g. POU91-00530 - Victorias City Hall">
+          <div class="row2">
+            <div><label>LRR-ID</label><input id="live_lrr" placeholder="10-00-05-DA"></div>
+            <div><label>Site / group</label><input id="live_site" placeholder="e.g. Victorias"></div>
+          </div>
+          <label>RF Region</label>
+          <input id="live_rfregion" placeholder="e.g. AS923-3">
+          <div class="row2">
+            <div><label>Gateway ID (backhaul)</label><input id="live_gatewayId" placeholder="e.g. 10-00-05-DA"></div>
+            <div><label>ICCID (SIM card)</label><input id="live_iccid" placeholder="8985200015505109579"></div>
+          </div>
+          <div class="row2">
+            <div><label>Latitude</label><input id="live_lat" placeholder="10.900841"></div>
+            <div><label>Longitude</label><input id="live_lon" placeholder="123.071587"></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>Installation type</label>
+              <select id="live_type" onchange="filterEnvOptions('live')">
+                <option value="outdoor">Outdoor (1.5km calibrated)</option>
+                <option value="indoor">Indoor (500m field-tested)</option>
+              </select>
+            </div>
+            <div>
+              <label>Connection status</label>
+              <select id="live_status">
+                <option value="active">Active</option>
+                <option value="inactive">Inactive (grayed out)</option>
+                <option value="unknown">Unknown</option>
+              </select>
+            </div>
+          </div>
+          <label>Environment / terrain</label>
+          <select id="live_env"></select>
+          <label>RSSI peak (dBm) — if measured</label>
+          <input id="live_rssi" placeholder="-80">
+          <label>Notes (planning context, not a maintenance log)</label>
+          <textarea id="live_notes" rows="2" placeholder="e.g. mounted on radio tower, coastal exposure"></textarea>
+          <button class="addBtn live" onclick="addGateway('live')">+ Add Gateway</button>
+          <div style="font-size:10.5px;color:var(--sub);margin-top:8px;text-align:center;">
+            💡 tip: right-click on the map to add a gateway at that spot
+          </div>
+          </div><!-- /addgw_section_body -->
+
+          <div class="section-label live" style="margin-top:20px;">Gateways (<span id="live_count">0</span>)</div>
+          <div id="live_list"><div class="empty-hint">No gateways yet — add one above.</div></div>
+
+          <div class="section-label live">Data</div>
+          <button class="ghost-btn" onclick="exportCSV('live')">Export CSV</button>
+          <button class="ghost-btn" onclick="document.getElementById('live_fileInput').click()">Import CSV (merge/update)</button>
+          <button class="ghost-btn" onclick="loadSample('live')">Load Victorias pilot sample</button>
+          <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="clearAll('live')">Clear all</button>
+          <input type="file" id="live_fileInput" accept=".csv" style="display:none;" onchange="importCSV('live', event)">
+
+          <div class="section-label live" style="margin-top:20px;display:flex;align-items:center;justify-content:space-between;">
+            <span>Actility ThingPark Wireless</span>
+            <button type="button" id="tpw_toggle_btn" onclick="toggleTpwSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+          </div>
+          <div id="tpw_section_body">
+          <div class="info-box" style="border-left-color:var(--accent);">
+            Pulls your deployed base stations (name, LRR ID, GPS, connection state) directly from the ThingPark Wireless Control-Plane API and merges them into the list above (matched by LRR ID).
+          </div>
+          <label>Platform hostname</label>
+          <input id="tpw_host" placeholder="e.g. community.thingpark.io">
+          <label>Service account client ID</label>
+          <input id="tpw_clientid" placeholder="sub-199983788/my-app">
+          <label>Service account client secret</label>
+          <input id="tpw_clientsecret" type="password" placeholder="••••••••••••••••">
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+            <input type="checkbox" id="tpw_remember" style="width:auto;">
+            <span style="font-size:11.5px;color:var(--sub);">Remember these on this device (localStorage, plaintext — only enable on a trusted machine)</span>
+          </label>
+          <button class="addBtn live" id="tpw_syncBtn" style="margin-top:10px;" onclick="syncFromThingPark()">🔄 Sync gateways from ThingPark</button>
+          <div id="tpw_lastSync" style="font-size:10.5px;color:var(--sub);margin-top:6px;"></div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+            <input type="checkbox" id="live_autoSyncEnabled" style="width:auto;" onchange="updateAutoSyncSetting('live')">
+            <span style="font-size:11.5px;color:var(--sub);">Auto-refresh every (minutes) -- also configurable from the NOC Dashboard</span>
+          </label>
+          <input id="live_autoSyncMinutes" type="number" min="2" step="1" value="15" style="max-width:120px;" onchange="updateAutoSyncSetting('live')">
+          <div id="tpw_status" style="font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5;white-space:pre-line;"></div>
+          <div class="caveat">
+            <b>CORS note:</b> ThingPark's API is typically not reachable with direct browser fetches from a local/static file — you'll likely see a network error. If that happens, run the included <code>thingpark_cors_proxy.py</code> script (<code>python thingpark_cors_proxy.py your-thingpark-hostname</code>) and point this field at <code>http://localhost:8787</code> instead of the ThingPark hostname.
+            <br><br>
+            <b>Field mapping caveat:</b> installation type (indoor/outdoor) is set from Actility's "Location mode" field — outdoor only when it's Onboard GNSS Position, indoor otherwise (Manual or unset). RF Region is probed from a few plausible field names (unconfirmed against a live response), and RSSI is left blank (ThingPark reports RSSI per uplink, not per gateway) — edit synced entries to correct these.
+            <br><br>
+            <b>Large fleets:</b> GPS location is only available on the per-station detail resource, so syncing fetches each gateway's detail individually (up to 16 at a time). For 1000+ gateways this can take real time — the sync button shows live progress, don't close the tab mid-sync. Redundancy-zone/overlap detection runs across every active gateway regardless of fleet size, so a very large fleet may take a little longer to redraw.
+          </div>
+          </div><!-- /tpw_section_body -->
+
+          <div class="section-label live" style="margin-top:20px;display:flex;align-items:center;justify-content:space-between;">
+            <span>Console Connect IoT (SIM Status)</span>
+            <button type="button" id="cc_toggle_btn" onclick="toggleCcSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+          </div>
+          <div id="cc_section_body">
+          <div class="info-box" style="border-left-color:var(--accent);">
+            Cross-references each gateway's ICCID against Console Connect by PCCW Global to pull live SIM status (active/paused/etc.), then combines it with the gateway's own online/offline state into a diagnosis (see caveat below).
+          </div>
+          <label>Platform base URL</label>
+          <input id="cc_host" placeholder="e.g. api.consoleconnect.com">
+          <div class="row2">
+            <div><label>API key / token</label><input id="cc_apikey" type="password" placeholder="••••••••••••••••"></div>
+            <div><label>Auth header</label>
+              <select id="cc_authstyle">
+                <option value="bearer">Authorization: Bearer</option>
+                <option value="apikey">X-API-Key</option>
+              </select>
+            </div>
+          </div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+            <input type="checkbox" id="cc_remember" style="width:auto;">
+            <span style="font-size:11.5px;color:var(--sub);">Remember these on this device (localStorage, plaintext — only enable on a trusted machine)</span>
+          </label>
+          <button class="addBtn live" id="cc_syncBtn" style="margin-top:10px;" onclick="syncFromConsoleConnect()">🔄 Check SIM status (API)</button>
+          <div style="text-align:center;font-size:10.5px;color:var(--sub);margin:8px 0;">— or, no API access yet —</div>
+          <button class="ghost-btn" onclick="document.getElementById('cc_csvInput').click()">📁 Import Subscriptions CSV</button>
+          <input type="file" id="cc_csvInput" accept=".csv" style="display:none;" onchange="importSubscriptionsCSV(event)">
+          <div id="cc_lastSync" style="font-size:10.5px;color:var(--sub);margin-top:6px;"></div>
+          <div id="cc_status" style="font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5;white-space:pre-line;"></div>
+
+          <label style="margin-top:12px;">Data spike threshold (MB, optional)</label>
+          <input id="cc_spike_threshold" placeholder="e.g. 5000 -- leave blank to disable" oninput="ccSaveSpikeThreshold()">
+
+          <div class="caveat">
+            <b>Scaffold, not confirmed:</b> Console Connect's SIM API isn't publicly documented — PCCW Global provides it to customers on request, so the endpoint/response shape above (<code>/iot/v1/subscriptions?iccid=</code>) is a best guess to be corrected once you have the real spec. <b>The CSV import above works today</b> with no credentials — it reads the exact file Console Connect's own portal exports.
+            <br><br>
+            <b>Diagnosis:</b> gateway offline + SIM active → Backhaul/Device Fault. Gateway offline + SIM inactive → Connectivity/Billing Issue. Gateway online + usage over your threshold → Traffic Anomaly Alert (off until you set a threshold above — a single reading has no trend to compare against).
+          </div>
+          </div><!-- /cc_section_body -->
+
+          <div class="section-label live">Display</div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="live_simpleMode" style="width:auto;" onchange="renderMap('live')">
+            <span style="font-size:11.5px;color:var(--sub);">Simple mode (dots only, no gradient — for large fleets)</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+            <input type="checkbox" id="live_showOverlap" style="width:auto;" onchange="renderMap('live')">
+            <span style="font-size:11.5px;color:var(--sub);">Highlight overlap (redundant coverage)</span>
+          </label>
+
+          <div class="caveat">
+            <b>Model honesty:</b> Outdoor uses Victorias field-calibrated path loss (n≈6.3, 1.5km);
+            indoor uses n≈4.5, 500m ceiling from Browan field testing. Environment tags scale these.
+            This is not Longley-Rice / COST-231 terrain-aware simulation.
+          </div>
+        </div>
+      </div>
+      <div class="map-wrap">
+        <div id="live_map" class="leaflet-map"></div>
+        <div class="status">Model: <b>EIRP 16dBm</b> AS923-3 &middot; outdoor n=<b>6.32</b> (1.5km), indoor n=<b>4.5</b> (500m) <span id="live_syncAgeIndicator"></span></div>
+        <div class="stats-bar" id="live_stats"></div>
+        <div class="map-tools">
+          <button class="map-tool-btn" id="live_measureBtn" onclick="toggleMeasure('live')">📏 Measure</button>
+          <button class="map-tool-btn" onclick="exportPNG('live')">📸 Screenshot</button>
+        </div>
+        <div class="legend">
+          <b>Coverage (calibrated estimate)</b><br><br>
+          <span class="swatch" style="background:#1a7332;"></span>Excellent (≥ -50 dBm)<br>
+          <span class="swatch" style="background:#2ecc40;"></span>Strong (-50 to -70 dBm)<br>
+          <span class="swatch" style="background:#f1c40f;"></span>Moderate (-70 to -90 dBm)<br>
+          <span class="swatch" style="background:#ff9500;"></span>Weak (-90 to -110 dBm)<br>
+          <span class="swatch" style="background:#ff3b30;"></span>Edge (-110 to -130 dBm)<br>
+          <span class="swatch" style="background:#5a5a5a;"></span>Inactive / down<br>
+          <span class="swatch" style="background:var(--overlap);"></span>Overlap zone (redundancy)<br>
+          <span style="color:#fff;">- - -</span> Calibrated ceiling<br>
+          <span style="color:#9c4a00;">- - -</span> 7.2km textbook ref. (outdoor only)<br>
+        </div>
+      </div>
+    </div>
+
+    <!-- PLANNING PANEL -->
+    <div class="panel" id="panel-planning">
+      <div class="sidebar">
+        <div class="sidebar-scroll">
+          <h1>Project Planning</h1>
+          <div class="subtitle">Proposed sites for upcoming POCs — not yet deployed</div>
+
+          <div class="submode-tabs">
+            <button class="submode-tab active" data-submode="outdoor" onclick="switchSubmode('outdoor')">🗺️ Outdoor Map</button>
+            <button class="submode-tab" data-submode="floorplan" onclick="switchSubmode('floorplan')">🏢 Indoor Floor Plan</button>
+          </div>
+
+          <div id="planning_outdoor_content">
+          <div class="info-box">
+            Drop proposed sites to see modeled coverage <i>before</i> installing. Uses same calibrated model.
+            Verify against real site survey before deployment.
+          </div>
+
+          <div class="section-label planning">Search & Filter</div>
+          <div class="search-box">
+            <input type="text" id="planning_search" placeholder="Search name / notes..." oninput="debouncedRenderTab('planning')">
+            <button class="search-clear" onclick="clearSearch('planning')">×</button>
+          </div>
+          <div class="filter-chips" id="planning_site_chips"></div>
+          <div style="font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:0.05em;margin-top:8px;">RF Region</div>
+          <input type="text" id="planning_rfregion_search" placeholder="Search RF regions..." oninput="renderRfRegionChips('planning')" style="margin-top:4px;">
+          <div class="filter-chips" id="planning_rfregion_chips" style="margin-top:6px;"></div>
+
+          <div class="section-label planning">Gap-Fill Suggestions</div>
+          <div class="info-box" style="border-left-color:var(--accent2);">
+            <b style="color:var(--accent2);">Geometric only — verify site feasibility.</b><br>
+            Suggests locations that maximize new coverage over currently-uncovered area within the visible map region. Ignores terrain, buildings, power/backhaul, device density, and landowner access — treat each suggestion as a "somewhere near here needs a gateway" hint, not a final site.
+          </div>
+          <button class="ghost-btn" onclick="runSuggest()">Suggest gap-fill locations</button>
+          <div id="suggest_results"></div>
+
+          <div class="section-label planning">Add Proposed Site</div>
+          <label>Site name / label</label>
+          <input id="planning_name" placeholder="e.g. Proposed - Brgy Talahib gap fill">
+          <div class="row2">
+            <div><label>Reference</label><input id="planning_lrr" placeholder="e.g. GW-P-01"></div>
+            <div><label>Site / group</label><input id="planning_site" placeholder="e.g. POC-Q4-2026"></div>
+          </div>
+          <label>RF Region</label>
+          <input id="planning_rfregion" placeholder="e.g. AS923-3">
+          <div class="row2">
+            <div><label>Latitude</label><input id="planning_lat" placeholder="10.9000"></div>
+            <div><label>Longitude</label><input id="planning_lon" placeholder="123.0700"></div>
+          </div>
+          <div class="row2">
+            <div>
+              <label>Installation type</label>
+              <select id="planning_type" onchange="filterEnvOptions('planning')">
+                <option value="outdoor">Outdoor</option>
+                <option value="indoor">Indoor</option>
+              </select>
+            </div>
+            <div>
+              <label>Status</label>
+              <select id="planning_status">
+                <option value="active">Modeled (default)</option>
+                <option value="inactive">Grayed out (comparison)</option>
+              </select>
+            </div>
+          </div>
+          <label>Environment / terrain</label>
+          <select id="planning_env"></select>
+          <label>Notes / rationale</label>
+          <textarea id="planning_notes" rows="2" placeholder="e.g. fills gap between GW-045 and GW-051"></textarea>
+          <button class="addBtn planning" onclick="addGateway('planning')">+ Add Proposed Site</button>
+          <div style="font-size:10.5px;color:var(--sub);margin-top:8px;text-align:center;">
+            💡 tip: right-click on the map to add a site at that spot
+          </div>
+
+          <div class="section-label planning" style="margin-top:20px;">Proposed sites (<span id="planning_count">0</span>)</div>
+          <div id="planning_list"><div class="empty-hint">No proposed sites yet.</div></div>
+
+          <div class="section-label planning">Data</div>
+          <button class="ghost-btn" onclick="exportCSV('planning')">Export CSV</button>
+          <button class="ghost-btn" onclick="document.getElementById('planning_fileInput').click()">Import CSV (merge/update)</button>
+          <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="clearAll('planning')">Clear all (new POC)</button>
+          <input type="file" id="planning_fileInput" accept=".csv" style="display:none;" onchange="importCSV('planning', event)">
+          <div class="section-label planning">Display</div>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:6px;cursor:pointer;">
+            <input type="checkbox" id="planning_simpleMode" style="width:auto;" onchange="renderMap('planning')">
+            <span style="font-size:11.5px;color:var(--sub);">Simple mode</span>
+          </label>
+          <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+            <input type="checkbox" id="planning_showOverlap" style="width:auto;" onchange="renderMap('planning')">
+            <span style="font-size:11.5px;color:var(--sub);">Highlight overlap</span>
+          </label>
+          </div><!-- /planning_outdoor_content -->
+
+          <div id="planning_floorplan_content" style="display:none;">
+            <div class="info-box" style="border-left-color:var(--warn);">
+              <b style="color:var(--warn);">Indoor floor plan mode.</b><br>
+              Upload a client-provided floor plan, georeference it against the map, place indoor gateways, and optionally trace walls to see wall-attenuated coverage. Everything here is a <b>modeled estimate</b> — not a substitute for a real indoor RF survey (Ekahau, iBwave, etc.).
+            </div>
+
+            <div class="section-label planning">1. Load Floor Plan</div>
+            <button class="ghost-btn" onclick="document.getElementById('fp_fileInput').click()">📁 Upload floor plan image</button>
+            <input type="file" id="fp_fileInput" accept="image/png,image/jpeg,image/jpg" style="display:none;" onchange="handleFpUpload(event)">
+            <div style="font-size:10.5px;color:var(--sub);margin-top:6px;">PNG or JPG. For PDFs, export a page as image first.</div>
+
+            <div class="section-label planning">2. Set Scale</div>
+            <button class="ghost-btn" id="fp_calBtn" onclick="startCalibration()" disabled>📐 Calibrate scale</button>
+            <div id="fp_scale_status" style="font-size:10.5px;color:var(--sub);margin-top:6px;">
+              No floor plan loaded yet.
+            </div>
+
+            <div class="section-label planning">3. Place Gateways</div>
+            <label>Gateway label</label>
+            <input id="fp_gw_name" placeholder="e.g. GW-Warehouse-A">
+            <label>Building type (affects indoor decay)</label>
+            <select id="fp_gw_env">
+              <option value="warehouse">Warehouse w/ metal shelving</option>
+              <option value="office">Concrete office building</option>
+              <option value="residential">Residential / light construction</option>
+            </select>
+            <button class="ghost-btn" id="fp_placeBtn" onclick="startPlaceMode()" disabled>📍 Click on plan to place</button>
+
+            <div class="section-label planning">4. (Optional) Trace Walls</div>
+            <div style="font-size:10.5px;color:var(--sub);margin-bottom:8px;line-height:1.5;">
+              Adds simple additive attenuation per wall crossed (ITU indoor model defaults).
+              <b style="color:var(--warn);">Not ray-traced</b> — real signals also reflect, diffract, and leak.
+            </div>
+            <label>Wall material</label>
+            <select id="fp_wall_type">
+              <option value="concrete">Concrete (~12 dB)</option>
+              <option value="drywall">Drywall (~3 dB)</option>
+              <option value="glass">Glass (~2 dB)</option>
+              <option value="metal">Metal (~26 dB)</option>
+            </select>
+            <button class="ghost-btn" id="fp_wallBtn" onclick="startWallMode()" disabled>🧱 Trace walls (click points, dbl-click to finish)</button>
+
+            <div class="section-label planning">Objects on plan (<span id="fp_count">0</span>)</div>
+            <div id="fp_list"><div class="empty-hint">Nothing placed yet.</div></div>
+
+            <div class="section-label planning">Data</div>
+            <button class="ghost-btn" onclick="exportFloorPlan()">Export floor plan JSON</button>
+            <button class="ghost-btn" onclick="document.getElementById('fp_jsonInput').click()">Import floor plan JSON</button>
+            <input type="file" id="fp_jsonInput" accept=".json" style="display:none;" onchange="importFloorPlan(event)">
+            <button class="ghost-btn" style="color:var(--danger);border-color:var(--danger);" onclick="clearFloorPlan()">Clear floor plan</button>
+          </div>
+        </div>
+      </div>
+      <div class="map-wrap" id="planning_map_wrap">
+        <div id="planning_map" class="leaflet-map"></div>
+        <div class="status planning-mode">Planning mode &middot; modeled estimate only &middot; <b>no live RSSI data</b></div>
+        <div class="stats-bar" id="planning_stats"></div>
+        <div class="map-tools">
+          <button class="map-tool-btn" id="planning_measureBtn" onclick="toggleMeasure('planning')">📏 Measure</button>
+          <button class="map-tool-btn" onclick="exportPNG('planning')">📸 Screenshot</button>
+        </div>
+        <div class="legend">
+          <b>Modeled Coverage (planning)</b><br><br>
+          <span class="swatch" style="background:#1a7332;"></span>Excellent (≥ -50 dBm)<br>
+          <span class="swatch" style="background:#2ecc40;"></span>Strong (-50 to -70 dBm)<br>
+          <span class="swatch" style="background:#f1c40f;"></span>Moderate (-70 to -90 dBm)<br>
+          <span class="swatch" style="background:#ff9500;"></span>Weak (-90 to -110 dBm)<br>
+          <span class="swatch" style="background:#ff3b30;"></span>Edge (-110 to -130 dBm)<br>
+          <span class="swatch" style="background:var(--overlap);"></span>Overlap zone<br>
+          <span style="color:#fff;">- - -</span> Calibrated ceiling<br>
+          <span style="color:#9c4a00;">- - -</span> 7.2km textbook ref. (outdoor only)<br>
+        </div>
+      </div>
+      <div class="fp-canvas-wrap" id="planning_fp_wrap" style="display:none;">
+        <div class="fp-empty" id="fp_empty">
+          <b>No floor plan loaded.</b><br><br>
+          Upload a floor plan image from the sidebar (PNG or JPG). Best results with plans that show a clear scale bar or a known-distance element (e.g., a labeled corridor) that you can use to calibrate.
+        </div>
+        <div id="fp_canvas">
+          <img id="fp_img" alt="Floor plan">
+          <svg id="fp_svg" xmlns="http://www.w3.org/2000/svg"></svg>
+        </div>
+        <div class="fp-toolbar" id="fp_toolbar" style="display:none;">
+          <button class="fp-tool-btn active" id="fp_mode_view" onclick="setFpMode('view')">👁 View</button>
+          <button class="fp-tool-btn" id="fp_mode_place" onclick="setFpMode('place')">📍 Place GW</button>
+          <button class="fp-tool-btn" id="fp_mode_wall" onclick="setFpMode('wall')">🧱 Trace wall</button>
+          <button class="fp-tool-btn" id="fp_mode_cal" onclick="setFpMode('calibrate')">📐 Calibrate</button>
+        </div>
+        <div class="fp-honesty-watermark" id="fp_watermark" style="display:none;">
+          <b>Modeled estimate</b> — indoor propagation uses distance-decay + wall-count. Not ray-traced. Materials assume ITU defaults. Real coverage depends on furnishings, floor materials, humidity, device orientation, and interference.
+        </div>
+        <div class="fp-scale-info" id="fp_scale_info" style="display:none;">Scale: not calibrated</div>
+      </div>
+    </div>
+
+    <!-- NOC DASHBOARD PANEL -->
+    <div class="panel" id="panel-noc">
+      <div class="noc-wrap">
+        <div id="noc_staleBanner"></div>
+        <h1 style="font-size:18px;">NOC Dashboard</h1>
+        <div class="subtitle">Live gateway + SIM health, downtime, and alerting &middot; recalculates each time you open this tab</div>
+
+        <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Overview</span>
+          <button class="ghost-btn" style="width:auto;margin:0;padding:6px 12px;" onclick="renderNocDashboard()">↻ Refresh</button>
+        </div>
+        <div id="noc_kpis" class="noc-kpi-grid"></div>
+
+        <div class="section-label live">Diagnosed Issues (Gateway + SIM cross-check)</div>
+        <div id="noc_diag_table"></div>
+
+        <div class="noc-two-col" style="margin-top:18px;">
+          <div>
+            <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+              <span>Currently Down</span>
+              <button type="button" id="noc_down_toggle_btn" onclick="toggleNocDownSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+            </div>
+            <div id="noc_down_section_body">
+            <div id="noc_down_table"></div>
+            </div><!-- /noc_down_section_body -->
+          </div>
+          <div>
+            <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+              <span>By Site</span>
+              <button type="button" id="noc_site_toggle_btn" onclick="toggleNocSiteSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+            </div>
+            <div id="noc_site_section_body">
+            <div id="noc_site_table"></div>
+            </div><!-- /noc_site_section_body -->
+          </div>
+        </div>
+
+        <div class="section-label live">Recent Status Changes</div>
+        <div id="noc_history_list"></div>
+
+        <div class="section-label live">Auto-Refresh & Alerts</div>
+        <div class="info-box" style="border-left-color:var(--accent);">
+          Auto-refresh polls ThingPark on an interval using the credentials saved in the Live Coverage sidebar (won't run without them). Alerts fire once per gateway transition into Inactive, and once per new Backhaul/Connectivity diagnosis &mdash; from a sync, a manual status edit, or a Console Connect SIM check.
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
+          <input type="checkbox" id="noc_autoSyncEnabled" style="width:auto;" onchange="updateNocSettings()">
+          <span style="font-size:11.5px;color:var(--sub);">Auto-refresh from ThingPark every (minutes)</span>
+        </label>
+        <input id="noc_autoSyncMinutes" type="number" min="2" step="1" value="15" style="max-width:120px;" onchange="updateNocSettings()">
+        <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
+          <input type="checkbox" id="noc_autoSyncIncludeCc" style="width:auto;" onchange="updateNocSettings()">
+          <span style="font-size:11.5px;color:var(--sub);">Also re-check Console Connect SIM status on each auto-refresh (uses the API credentials saved above, not the CSV import)</span>
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;margin-top:12px;cursor:pointer;">
+          <input type="checkbox" id="noc_notifyEnabled" style="width:auto;" onchange="updateNocSettings()">
+          <span style="font-size:11.5px;color:var(--sub);">Desktop notification when a gateway goes inactive or gets a new diagnosis (needs browser permission)</span>
+        </label>
+        <label>Webhook URL (Slack/Teams incoming webhook, optional)</label>
+        <input id="noc_webhookUrl" placeholder="https://hooks.slack.com/services/..." onchange="updateNocSettings()">
+
+        <label style="display:flex;align-items:center;gap:8px;margin-top:14px;cursor:pointer;">
+          <input type="checkbox" id="noc_emailEnabled" style="width:auto;" onchange="toggleNocEmailFields();updateNocSettings()">
+          <span style="font-size:11.5px;color:var(--sub);">Email alert via EmailJS (needs a free emailjs.com account)</span>
+        </label>
+        <div id="noc_email_fields" style="display:none;">
+          <label>Email 1 -- small/normal outages</label>
+          <input id="noc_emailTo" placeholder="noc-team@yourcompany.com" onchange="updateNocSettings()">
+          <label>Email 2 -- mass-outage escalation (optional)</label>
+          <input id="noc_emailTo2" placeholder="noc-manager@yourcompany.com" onchange="updateNocSettings()">
+          <div class="row2">
+            <div><label>Level 1 threshold (gateways down at once)</label><input id="noc_level1Threshold" type="number" min="2" step="1" value="10" onchange="updateNocSettings()"></div>
+            <div><label>Level 2 threshold (critical)</label><input id="noc_level2Threshold" type="number" min="2" step="1" value="20" onchange="updateNocSettings()"></div>
+          </div>
+          <div style="font-size:10.5px;color:var(--sub);margin:4px 0 10px;line-height:1.5;">
+            Gateways that go inactive in the same sync (or the same manual edit) are grouped into one alert instead of one email each. Below the Level 1 threshold, it goes to Email 1 as a normal alert. At or above Level 1, it's a "Level 1" outage alert to Email 2. At or above Level 2, it's escalated further to a "Level 2 -- critical" alert, still to Email 2 (leave Email 2 blank to send everything to Email 1 instead).
+          </div>
+          <div class="row2">
+            <div><label>EmailJS Service ID</label><input id="noc_emailServiceId" placeholder="service_xxxxxxx" onchange="updateNocSettings()"></div>
+            <div><label>EmailJS Template ID</label><input id="noc_emailTemplateId" placeholder="template_xxxxxxx" onchange="updateNocSettings()"></div>
+          </div>
+          <label>EmailJS Public Key</label>
+          <input id="noc_emailPublicKey" placeholder="e.g. AbCdEfGhIjKlMnOp" onchange="updateNocSettings()">
+          <div class="caveat">
+            <b>Template variables:</b> in your EmailJS email template, use placeholders <code>{{to_email}}</code>, <code>{{subject}}</code>, <code>{{message}}</code>, and <code>{{time}}</code> -- this tool fills them in on every alert. Free EmailJS accounts cap at 200 emails/month. Gateway+SIM diagnosis alerts (Backhaul/Billing/Traffic) always go to Email 1 -- the escalation tier only applies to "N gateways went inactive" events.
+          </div>
+        </div>
+
+        <button class="ghost-btn" style="max-width:220px;" onclick="testNocWebhook()">Send test alert</button>
+        <div id="noc_alertStatus" style="font-size:10.5px;color:var(--sub);margin-top:6px;"></div>
+        <div class="caveat">
+          <b>CORS note:</b> some webhook providers block direct browser POSTs. If the test alert fails, route it through a small server-side proxy (same idea as the ThingPark CORS proxy referenced in the Live tab). Email alerts go through EmailJS's own API and aren't affected by this.
+        </div>
+
+        <div class="section-label live">Shift Handoff Backup</div>
+        <div style="font-size:10.5px;color:var(--sub);margin-bottom:8px;line-height:1.5;">
+          All data here lives in this browser's local storage only. Export a full backup to hand off to another NOC operator or machine; CSV export (per tab) is still available in each tab's Data section for spreadsheet use.
+        </div>
+        <button class="ghost-btn" style="max-width:280px;" onclick="exportFullBackup()">⬇ Export full backup (JSON)</button>
+        <button class="ghost-btn" style="max-width:280px;" onclick="document.getElementById('noc_backupInput').click()">⬆ Import full backup (JSON)</button>
+        <input type="file" id="noc_backupInput" accept=".json" style="display:none;" onchange="importFullBackup(event)">
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============ PROPAGATION MODEL ============
+const EIRP_DBM = 16.0, FREQ_MHZ = 916.6, SENS_FLOOR = -130, D0_M = 100;
+const OUTDOOR = { maxRange: 1500, n: 6.32 };
+const INDOOR  = { maxRange: 500,  n: 4.5  };
+const ENV_ADJ = {
+  open:0.85, coastal:0.90, mixed:1.00, dense:1.10, forest:1.15,
+  warehouse:1.20, office:1.10, residential:0.95
+};
+const ENV_LABEL = {
+  open:'Open/rural', coastal:'Coastal/elevated', mixed:'Suburban', dense:'Dense urban',
+  forest:'Forest', warehouse:'Warehouse', office:'Concrete office', residential:'Residential'
+};
+// Which envs belong to indoor vs outdoor
+const OUTDOOR_ENVS = ['open','coastal','mixed','dense','forest'];
+const INDOOR_ENVS = ['warehouse','office','residential'];
+
+function fspl(dKm, fMhz){ return 20*Math.log10(dKm) + 20*Math.log10(fMhz) + 32.44; }
+const PL_D0 = fspl(D0_M/1000, FREQ_MHZ);
+function effectiveModel(gw){
+  const base = gw.type === 'indoor' ? INDOOR : OUTDOOR;
+  const adj = ENV_ADJ[gw.env || 'mixed'] || 1.0;
+  return { maxRange: base.maxRange, n: base.n * adj };
+}
+function rssiAt(gw, dM){
+  const mdl = effectiveModel(gw);
+  dM = Math.max(dM, D0_M);
+  const pl = PL_D0 + 10*mdl.n*Math.log10(dM/D0_M);
+  return EIRP_DBM - pl;
+}
+function rssiColor(rssi){
+  if(rssi >= -50)  return '#1a7332';
+  if(rssi >= -70)  return '#2ecc40';
+  if(rssi >= -90)  return '#f1c40f';
+  if(rssi >= -110) return '#ff9500';
+  if(rssi >= -130) return '#ff3b30';
+  return null;
+}
+
+// ============ CONFIDENCE ============
+function confidence(gw){
+  let score = 0;
+  if(gw.lat && gw.lon) score += 40;
+  if(gw.type) score += 20;
+  if(gw.env && gw.env !== 'mixed') score += 15;
+  if(gw.rssi !== '' && gw.rssi != null) score += 25;
+  if(score >= 80) return 'hi';
+  if(score >= 50) return 'med';
+  return 'lo';
+}
+const CONF_LABEL = { hi:'High confidence', med:'Medium confidence', lo:'Low confidence' };
+
+// ============ NOC: TIME HELPERS ============
+function formatDuration(ms){
+  if(ms == null || isNaN(ms) || ms < 0) return 'unknown';
+  const mins = Math.floor(ms/60000);
+  if(mins < 1) return 'just now';
+  if(mins < 60) return `${mins}m`;
+  const hrs = Math.floor(mins/60);
+  const remMins = mins % 60;
+  if(hrs < 24) return `${hrs}h ${remMins}m`;
+  const days = Math.floor(hrs/24);
+  const remHrs = hrs % 24;
+  return `${days}d ${remHrs}h`;
+}
+function formatAgo(iso){
+  if(!iso) return null;
+  const t = new Date(iso).getTime();
+  if(isNaN(t)) return null;
+  return formatDuration(Date.now() - t) + ' ago';
+}
+
+// ============ NOC: STATUS-CHANGE HISTORY ============
+// Every time a live gateway's status flips (via ThingPark sync or a manual
+// edit), we log a timestamped entry so the NOC can see downtime duration,
+// flapping gateways, and a change feed -- not just the current snapshot.
+const NOC_HISTORY_KEY = 'live_status_history_v1';
+function saveStatusHistory(){
+  try{ localStorage.setItem(NOC_HISTORY_KEY, JSON.stringify(state.live.statusHistory.slice(0,500))); }
+  catch(e){ console.warn('Could not save status history', e); }
+}
+function loadStatusHistory(){
+  try{
+    const raw = localStorage.getItem(NOC_HISTORY_KEY);
+    if(raw) state.live.statusHistory = JSON.parse(raw);
+  }catch(e){}
+}
+// Gateways that went inactive since the last flush. Sync (or a manual edit)
+// can flip many gateways in one pass -- rather than sending one email per
+// gateway, we batch them here and flushNocInactiveBatch() below turns the
+// whole batch into a single alert, escalated by size.
+let _nocBatchInactive = [];
+function recordStatusChange(gw, fromStatus, toStatus){
+  fromStatus = fromStatus || 'unknown';
+  toStatus = toStatus || 'unknown';
+  if(fromStatus === toStatus) return;
+  const entry = { ts: new Date().toISOString(), lrr: gw.lrr||'', name: gw.name||'Unnamed gateway', site: gw.site||'', from: fromStatus, to: toStatus };
+  state.live.statusHistory.unshift(entry);
+  if(state.live.statusHistory.length > 500) state.live.statusHistory.length = 500;
+  saveStatusHistory();
+  if(toStatus === 'inactive') _nocBatchInactive.push({ name: gw.name||'Unnamed gateway', site: gw.site||'' });
+}
+// Turns whatever accumulated in _nocBatchInactive into a single alert with a
+// three-tier severity: below Level 1 threshold it's a normal alert to Email
+// 1; at or above Level 1 it's a "Level 1" outage alert to Email 2; at or
+// above Level 2 (always >= Level 1, in case the two get set out of order)
+// it's escalated further to "Level 2 -- critical", still to Email 2.
+function flushNocInactiveBatch(){
+  const batch = _nocBatchInactive;
+  _nocBatchInactive = [];
+  if(batch.length === 0) return;
+  const s = getNocSettings();
+  const level1 = s.level1Threshold;
+  const level2 = Math.max(s.level2Threshold, level1);
+  const severity = batch.length >= level2 ? 2 : batch.length >= level1 ? 1 : 0;
+  const shown = batch.slice(0, 10).map(b => b.name + (b.site ? ' (' + b.site + ')' : '')).join(', ');
+  const extra = batch.length > 10 ? `, +${batch.length - 10} more` : '';
+  const msg = severity === 2
+    ? `⚠ CRITICAL (Level 2): ${batch.length} gateways went inactive at once -- ${shown}${extra}`
+    : severity === 1
+      ? `⚠ Level 1 outage: ${batch.length} gateways went inactive at once -- ${shown}${extra}`
+      : batch.length === 1
+        ? `⚠ Gateway went inactive: ${shown}`
+        : `⚠ ${batch.length} gateways went inactive: ${shown}${extra}`;
+  fireNocAlert(msg, new Date().toISOString(), severity);
+}
+// Most recent history entry for a gateway (array is newest-first). Used to
+// find "down since" for the currently-inactive list.
+function findLatestHistoryEntry(gw){
+  const key = gw.lrr;
+  return state.live.statusHistory.find(h => (key && h.lrr === key) || (!key && h.name === gw.name));
+}
+// Small " &middot; last seen ..." / " &middot; down Xh Ym" suffix used in the
+// gateway list row meta line (Live tab only).
+function nocMetaSuffix(gw){
+  if(gw.status === 'inactive'){
+    const hist = findLatestHistoryEntry(gw);
+    if(hist && hist.to === 'inactive') return ' &middot; down ' + formatDuration(Date.now() - new Date(hist.ts).getTime());
+    return '';
+  }
+  if(gw.lastSeen) return ' &middot; last seen ' + formatAgo(gw.lastSeen);
+  return '';
+}
+
+// Tracks which gateways already have an active diagnosis alert fired, so a
+// re-render doesn't re-notify for a diagnosis that hasn't changed. Cleared
+// entries fall out naturally since we only add keys for gateways currently
+// flagged.
+const _nocDiagAlerted = new Set();
+function checkDiagnosisAlerts(){
+  if(typeof computeDiagnosis !== 'function') return;
+  const stillFlagged = new Set();
+  state.live.gateways.forEach(gw => {
+    const diag = computeDiagnosis(gw);
+    if(!diag) return;
+    const key = gw.lrr || gw.name;
+    stillFlagged.add(key);
+    if(!_nocDiagAlerted.has(key)){
+      _nocDiagAlerted.add(key);
+      fireNocAlert(`⚠ ${diag.label}: ${gw.name}${gw.site ? ' ('+gw.site+')' : ''} — ${diag.detail}`, new Date().toISOString(), 0);
+    }
+  });
+  // Drop keys for gateways no longer flagged so a future re-occurrence alerts again
+  Array.from(_nocDiagAlerted).forEach(k => { if(!stillFlagged.has(k)) _nocDiagAlerted.delete(k); });
+}
+
+// ============ NOC: SETTINGS (auto-refresh + alerts) ============
+const NOC_SETTINGS_KEY = 'noc_settings_v1';
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:false, emailTo:'', emailTo2:'', level1Threshold:10, level2Threshold:20, emailServiceId:'', emailTemplateId:'', emailPublicKey:'' };
+function getNocSettings(){
+  try{
+    const raw = localStorage.getItem(NOC_SETTINGS_KEY);
+    if(raw) return Object.assign({}, NOC_SETTINGS_DEFAULT, JSON.parse(raw));
+  }catch(e){}
+  return Object.assign({}, NOC_SETTINGS_DEFAULT);
+}
+function saveNocSettingsObj(s){ try{ localStorage.setItem(NOC_SETTINGS_KEY, JSON.stringify(s)); }catch(e){} }
+let _nocAutoSyncTimer = null;
+function applyNocAutoSync(){
+  if(_nocAutoSyncTimer){ clearInterval(_nocAutoSyncTimer); _nocAutoSyncTimer = null; }
+  const s = getNocSettings();
+  if(s.autoSyncEnabled){
+    const mins = Math.max(2, parseInt(s.autoSyncMinutes,10) || 15);
+    _nocAutoSyncTimer = setInterval(() => {
+      const hasCreds = document.getElementById('tpw_host').value.trim()
+        && document.getElementById('tpw_clientid').value.trim()
+        && document.getElementById('tpw_clientsecret').value.trim();
+      const btn = document.getElementById('tpw_syncBtn');
+      if(hasCreds && btn && !btn.disabled) syncFromThingPark();
+
+      // Opt-in: also re-check Console Connect SIM status on the same
+      // schedule, using its own saved API credentials (not the CSV path --
+      // that has no source to re-run automatically). Independently gated
+      // so a ThingPark-only setup never touches Console Connect at all.
+      const settingsNow = getNocSettings();
+      if(settingsNow.autoSyncIncludeCc){
+        const hasCcCreds = document.getElementById('cc_host').value.trim()
+          && document.getElementById('cc_apikey').value.trim();
+        const ccBtn = document.getElementById('cc_syncBtn');
+        if(hasCcCreds && ccBtn && !ccBtn.disabled) syncFromConsoleConnect();
+      }
+    }, mins*60000);
+  }
+}
+function updateNocSettings(){
+  const s = {
+    autoSyncEnabled: document.getElementById('noc_autoSyncEnabled').checked,
+    autoSyncMinutes: parseInt(document.getElementById('noc_autoSyncMinutes').value,10) || 15,
+    autoSyncIncludeCc: document.getElementById('noc_autoSyncIncludeCc').checked,
+    staleMinutes: getNocSettings().staleMinutes,
+    notifyEnabled: document.getElementById('noc_notifyEnabled').checked,
+    webhookUrl: document.getElementById('noc_webhookUrl').value.trim(),
+    emailEnabled: document.getElementById('noc_emailEnabled').checked,
+    emailTo: document.getElementById('noc_emailTo').value.trim(),
+    emailTo2: document.getElementById('noc_emailTo2').value.trim(),
+    level1Threshold: Math.max(2, parseInt(document.getElementById('noc_level1Threshold').value,10) || 10),
+    level2Threshold: Math.max(2, parseInt(document.getElementById('noc_level2Threshold').value,10) || 20),
+    emailServiceId: document.getElementById('noc_emailServiceId').value.trim(),
+    emailTemplateId: document.getElementById('noc_emailTemplateId').value.trim(),
+    emailPublicKey: document.getElementById('noc_emailPublicKey').value.trim()
+  };
+  if(s.notifyEnabled && 'Notification' in window && Notification.permission === 'default'){
+    Notification.requestPermission().then(() => { saveNocSettingsObj(s); });
+  }
+  saveNocSettingsObj(s);
+  applyNocAutoSync();
+  loadNocSettingsIntoUI();
+}
+// Auto-refresh enable/interval is mirrored in two places: the Live Coverage
+// tab (next to the ThingPark sync button, where the credentials already
+// are) and the NOC Dashboard (next to the rest of the alerting config).
+// Whichever one the user touches writes to the same underlying setting,
+// then loadNocSettingsIntoUI() below re-populates both copies so they never
+// drift out of sync with each other.
+function updateAutoSyncSetting(source){
+  const s = getNocSettings();
+  const enabledEl = document.getElementById(source + '_autoSyncEnabled');
+  const minutesEl = document.getElementById(source + '_autoSyncMinutes');
+  if(!enabledEl || !minutesEl) return;
+  s.autoSyncEnabled = enabledEl.checked;
+  s.autoSyncMinutes = Math.max(2, parseInt(minutesEl.value,10) || 15);
+  saveNocSettingsObj(s);
+  applyNocAutoSync();
+  loadNocSettingsIntoUI();
+}
+function loadNocSettingsIntoUI(){
+  const s = getNocSettings();
+  const el1 = document.getElementById('noc_autoSyncEnabled'); if(el1) el1.checked = s.autoSyncEnabled;
+  const el2 = document.getElementById('noc_autoSyncMinutes'); if(el2) el2.value = s.autoSyncMinutes;
+  const el1b = document.getElementById('live_autoSyncEnabled'); if(el1b) el1b.checked = s.autoSyncEnabled;
+  const el2b = document.getElementById('live_autoSyncMinutes'); if(el2b) el2b.value = s.autoSyncMinutes;
+  const el2c = document.getElementById('noc_autoSyncIncludeCc'); if(el2c) el2c.checked = s.autoSyncIncludeCc;
+  const el3 = document.getElementById('noc_notifyEnabled'); if(el3) el3.checked = s.notifyEnabled;
+  const el4 = document.getElementById('noc_webhookUrl'); if(el4) el4.value = s.webhookUrl;
+  const el5 = document.getElementById('noc_emailEnabled'); if(el5) el5.checked = s.emailEnabled;
+  const el6 = document.getElementById('noc_emailTo'); if(el6) el6.value = s.emailTo;
+  const el7 = document.getElementById('noc_emailServiceId'); if(el7) el7.value = s.emailServiceId;
+  const el8 = document.getElementById('noc_emailTemplateId'); if(el8) el8.value = s.emailTemplateId;
+  const el9 = document.getElementById('noc_emailPublicKey'); if(el9) el9.value = s.emailPublicKey;
+  const el10 = document.getElementById('noc_emailTo2'); if(el10) el10.value = s.emailTo2;
+  const el11 = document.getElementById('noc_level1Threshold'); if(el11) el11.value = s.level1Threshold;
+  const el12 = document.getElementById('noc_level2Threshold'); if(el12) el12.value = s.level2Threshold;
+  toggleNocEmailFields();
+}
+function toggleNocEmailFields(){
+  const cb = document.getElementById('noc_emailEnabled');
+  const box = document.getElementById('noc_email_fields');
+  if(cb && box) box.style.display = cb.checked ? '' : 'none';
+}
+function updateSyncAgeIndicator(){
+  const el = document.getElementById('live_syncAgeIndicator');
+  if(!el) return;
+  const iso = localStorage.getItem(TPW_LAST_SYNC_KEY);
+  if(!iso){ el.innerHTML = ''; return; }
+  const ageMs = Date.now() - new Date(iso).getTime();
+  const stale = ageMs > 20*60000;
+  el.innerHTML = stale
+    ? `&middot; <span style="color:var(--warn);">⚠ synced ${formatAgo(iso)} — may be stale</span>`
+    : `&middot; synced ${formatAgo(iso)}`;
+}
+
+// ============ NOC: ALERTING ============
+// msg is a self-contained, human-readable alert string (gateway/site names
+// already baked in by the caller). isMass decides which email address gets
+// it -- Email 2 (falling back to Email 1 if unset) for severity 1 (Level 1)
+// and severity 2 (Level 2, critical), Email 1 for severity 0 (normal).
+// Desktop notification + webhook always fire regardless of tier since those
+// aren't split by recipient.
+function fireNocAlert(msg, tsIso, severity){
+  const s = getNocSettings();
+  const sevLabel = severity === 2 ? 'LoRaWAN NOC — CRITICAL (Level 2)' : severity === 1 ? 'LoRaWAN NOC — Level 1 outage' : 'LoRaWAN NOC Alert';
+  if(s.notifyEnabled && 'Notification' in window && Notification.permission === 'granted'){
+    try{ new Notification(sevLabel, {body: msg}); }catch(e){}
+  }
+  if(s.webhookUrl){
+    fetch(s.webhookUrl, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ text: `${msg}\nTime: ${new Date(tsIso||Date.now()).toLocaleString()}` })
+    }).catch(err => console.warn('Webhook alert failed', err));
+  }
+  const targetEmail = (severity >= 1 && s.emailTo2) ? s.emailTo2 : s.emailTo;
+  if(s.emailEnabled && s.emailServiceId && s.emailTemplateId && s.emailPublicKey && targetEmail && window.emailjs){
+    emailjs.send(s.emailServiceId, s.emailTemplateId, {
+      to_email: targetEmail,
+      subject: sevLabel,
+      message: msg,
+      time: new Date(tsIso||Date.now()).toLocaleString()
+    }, { publicKey: s.emailPublicKey }).catch(err => console.warn('EmailJS alert failed', err));
+  }
+}
+async function testNocWebhook(){
+  const s = getNocSettings();
+  const statusEl = document.getElementById('noc_alertStatus');
+  const results = [];
+
+  if(s.notifyEnabled){
+    if('Notification' in window && Notification.permission === 'granted'){
+      try{ new Notification('LoRaWAN NOC Alert', {body:'Test alert — desktop notifications are working.'}); results.push('Desktop notification sent.'); }
+      catch(e){ results.push('Desktop notification failed: ' + e.message); }
+    } else {
+      results.push('Desktop notifications enabled but not permitted yet — re-check the box to trigger the browser permission prompt.');
+    }
+  }
+
+  if(s.webhookUrl){
+    try{
+      await fetch(s.webhookUrl, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({text:'✅ Test alert from LoRaWAN Coverage Planner NOC dashboard.'})});
+      results.push('Webhook request sent — check Slack/Teams (if nothing arrives, the endpoint may block direct browser requests; see CORS note below).');
+    }catch(err){
+      results.push('Webhook failed: ' + err.message);
+    }
+  }
+
+  if(s.emailEnabled){
+    if(!(s.emailServiceId && s.emailTemplateId && s.emailPublicKey)){
+      results.push('Email alert is on but missing a Service ID, Template ID, or Public Key.');
+    } else if(!window.emailjs){
+      results.push('EmailJS library did not load — check your internet connection or ad blocker.');
+    } else {
+      if(s.emailTo){
+        try{
+          await emailjs.send(s.emailServiceId, s.emailTemplateId, {
+            to_email: s.emailTo, subject: 'LoRaWAN NOC Test Alert (Email 1)',
+            message: '✅ Test alert — this is where small/normal outage alerts go.',
+            time: new Date().toLocaleString()
+          }, { publicKey: s.emailPublicKey });
+          results.push(`Test email sent to Email 1 (${s.emailTo}).`);
+        }catch(err){
+          results.push('Email 1 failed: ' + (err && err.text ? err.text : (err && err.message) || String(err)));
+        }
+      } else {
+        results.push('Email 1 address not set.');
+      }
+      if(s.emailTo2){
+        try{
+          await emailjs.send(s.emailServiceId, s.emailTemplateId, {
+            to_email: s.emailTo2, subject: 'LoRaWAN NOC Test Alert (Email 2 — escalation)',
+            message: `✅ Test alert — this is where Level 1 (${s.level1Threshold}+ gateways down at once) and Level 2 -- critical (${s.level2Threshold}+ gateways) alerts go.`,
+            time: new Date().toLocaleString()
+          }, { publicKey: s.emailPublicKey });
+          results.push(`Test email sent to Email 2 (${s.emailTo2}).`);
+        }catch(err){
+          results.push('Email 2 failed: ' + (err && err.text ? err.text : (err && err.message) || String(err)));
+        }
+      }
+    }
+  }
+
+  if(results.length === 0) results.push('No alert channel is turned on yet — enable desktop notifications, a webhook, and/or email above, then try again.');
+  statusEl.textContent = results.join(' ');
+}
+
+// ============ NOC: FULL BACKUP (JSON) ============
+function exportFullBackup(){
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    live: state.live.gateways,
+    planning: state.planning.gateways,
+    statusHistory: state.live.statusHistory
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+  a.download = `lorawan_noc_backup_${ts}.json`;
+  a.click();
+}
+function importFullBackup(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try{
+      const data = JSON.parse(reader.result);
+      if(!confirm('Import full backup? This replaces the current Live gateways, Planning sites, and status history in this browser.')) return;
+      if(Array.isArray(data.live)) state.live.gateways = data.live;
+      if(Array.isArray(data.planning)) state.planning.gateways = data.planning;
+      if(Array.isArray(data.statusHistory)) state.live.statusHistory = data.statusHistory;
+      saveStatusHistory();
+      renderList('live'); renderMap('live'); save('live');
+      renderList('planning'); renderMap('planning'); save('planning');
+      renderNocDashboard();
+      alert('Backup imported.');
+    }catch(err){
+      alert('Import failed: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ============ NOC: DASHBOARD RENDER ============
+function renderNocDashboard(){
+  const gws = state.live.gateways;
+  const total = gws.length;
+  const active = gws.filter(g => g.status === 'active').length;
+  const inactive = gws.filter(g => g.status === 'inactive').length;
+  const unknown = total - active - inactive;
+  const noGps = gws.filter(g => !g.lat || !g.lon).length;
+  const noRssi = gws.filter(g => g.rssi === '' || g.rssi == null).length;
+  const uptimePct = total ? Math.round((active/total)*100) : 0;
+
+  const staleMins = getNocSettings().staleMinutes;
+  const staleActive = gws.filter(g => g.status === 'active' && g.lastSeen && (Date.now() - new Date(g.lastSeen).getTime()) > staleMins*60000).length;
+
+  const diagFn = typeof computeDiagnosis === 'function' ? computeDiagnosis : () => null;
+  const diagnosed = gws.map(g => ({g, diag: diagFn(g)})).filter(d => d.diag);
+
+  const kpisEl = document.getElementById('noc_kpis');
+  if(kpisEl) kpisEl.innerHTML = `
+    <div class="noc-kpi"><div class="num">${total}</div><div class="lbl">Total Gateways</div></div>
+    <div class="noc-kpi"><div class="num">${active}</div><div class="lbl">Active</div></div>
+    <div class="noc-kpi ${inactive>0?'danger':''}"><div class="num">${inactive}</div><div class="lbl">Inactive</div></div>
+    <div class="noc-kpi ${unknown>0?'warn':''}"><div class="num">${unknown}</div><div class="lbl">Unknown</div></div>
+    <div class="noc-kpi"><div class="num">${uptimePct}%</div><div class="lbl">Active Ratio</div></div>
+    <div class="noc-kpi ${staleActive>0?'warn':''}" title="Marked active but no uplink in over ${staleMins} min"><div class="num">${staleActive}</div><div class="lbl">Stale (no uplink)</div></div>
+    <div class="noc-kpi ${diagnosed.length>0?'danger':''}" title="Gateway + SIM cross-check flags"><div class="num">${diagnosed.length}</div><div class="lbl">Diagnosed Issues</div></div>
+    <div class="noc-kpi ${noGps>0?'warn':''}"><div class="num">${noGps}</div><div class="lbl">No GPS</div></div>
+    <div class="noc-kpi ${noRssi>0?'warn':''}"><div class="num">${noRssi}</div><div class="lbl">No RSSI</div></div>
+  `;
+
+  const syncIso = localStorage.getItem(TPW_LAST_SYNC_KEY);
+  const bannerEl = document.getElementById('noc_staleBanner');
+  if(bannerEl){
+    if(!syncIso){
+      bannerEl.innerHTML = `<div class="noc-banner">⚠ Never synced from ThingPark yet. <button onclick="switchTab('live')">Go sync</button></div>`;
+    } else if(Date.now() - new Date(syncIso).getTime() > 20*60000){
+      bannerEl.innerHTML = `<div class="noc-banner">⚠ Data may be stale — last ThingPark sync was ${formatAgo(syncIso)}. <button onclick="switchTab('live')">Go sync</button></div>`;
+    } else {
+      bannerEl.innerHTML = `<div class="noc-banner info">✓ Last synced ${formatAgo(syncIso)}.</div>`;
+    }
+  }
+
+  const diagEl = document.getElementById('noc_diag_table');
+  if(diagEl) diagEl.innerHTML = diagnosed.length === 0
+    ? '<div class="empty-hint">No gateway+SIM cross-check issues flagged right now.</div>'
+    : `<table class="noc-table"><thead><tr><th>Gateway</th><th>Diagnosis</th><th>Detail</th></tr></thead><tbody>
+        ${diagnosed.map(({g,diag}) => `<tr>
+          <td>${g.name}${g.site?'<br><span style="color:var(--sub);font-size:10.5px;">'+g.site+'</span>':''}</td>
+          <td><span class="badge diag-${diag.color}">⚠ ${diag.label}</span></td>
+          <td style="font-size:11px;color:var(--sub);">${diag.detail}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+
+  const downList = gws.filter(g => g.status === 'inactive').map(g => {
+    const hist = findLatestHistoryEntry(g);
+    const sinceIso = (hist && hist.to === 'inactive') ? hist.ts : null;
+    const sinceMs = sinceIso ? Date.now() - new Date(sinceIso).getTime() : null;
+    return { g, sinceIso, sinceMs };
+  }).sort((a,b) => (b.sinceMs||0) - (a.sinceMs||0));
+
+  const downEl = document.getElementById('noc_down_table');
+  if(downEl) downEl.innerHTML = downList.length === 0
+    ? '<div class="empty-hint">No gateways currently marked inactive.</div>'
+    : `<table class="noc-table"><thead><tr><th>Gateway</th><th>Down since</th><th>Duration</th><th>Backhaul</th></tr></thead><tbody>
+        ${downList.map(({g,sinceIso,sinceMs}) => `<tr>
+          <td>${g.name}${g.site?'<br><span style="color:var(--sub);font-size:10.5px;">'+g.site+'</span>':''}</td>
+          <td>${sinceIso ? new Date(sinceIso).toLocaleString() : 'unknown'}</td>
+          <td>${sinceMs!=null ? formatDuration(sinceMs) : 'unknown'}</td>
+          <td style="font-family:var(--mono);font-size:10.5px;">${g.gatewayId||g.lrr||'—'}${g.iccid?'<br>SIM '+g.iccid:''}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+
+  const bySite = {};
+  gws.forEach(g => {
+    const site = g.site || '(no site)';
+    if(!bySite[site]) bySite[site] = {total:0, active:0, inactive:0, unknown:0};
+    bySite[site].total++;
+    bySite[site][g.status === 'active' ? 'active' : g.status === 'inactive' ? 'inactive' : 'unknown']++;
+  });
+  const siteRows = Object.entries(bySite).sort((a,b) => b[1].inactive - a[1].inactive);
+  const siteEl = document.getElementById('noc_site_table');
+  if(siteEl) siteEl.innerHTML = siteRows.length === 0 ? '<div class="empty-hint">No data yet.</div>' :
+    `<table class="noc-table"><thead><tr><th>Site</th><th>Total</th><th>Active</th><th>Inactive</th><th>Unknown</th></tr></thead><tbody>
+      ${siteRows.map(([site,c]) => `<tr><td>${site}</td><td>${c.total}</td><td>${c.active}</td><td>${c.inactive>0?'<b style="color:var(--danger);">'+c.inactive+'</b>':'0'}</td><td>${c.unknown}</td></tr>`).join('')}
+    </tbody></table>`;
+
+  const hist = state.live.statusHistory.slice(0, 25);
+  const histEl = document.getElementById('noc_history_list');
+  if(histEl) histEl.innerHTML = hist.length === 0 ? '<div class="empty-hint">No status changes recorded yet — history starts accumulating after the next sync or manual edit.</div>' :
+    `<table class="noc-table"><thead><tr><th>When</th><th>Gateway</th><th>Change</th></tr></thead><tbody>
+      ${hist.map(h => `<tr><td>${new Date(h.ts).toLocaleString()}</td><td>${h.name}</td><td>${h.from} → <b style="color:${h.to==='inactive'?'var(--danger)':h.to==='active'?'var(--conf-hi)':'var(--warn)'};">${h.to}</b></td></tr>`).join('')}
+    </tbody></table>`;
+
+  checkDiagnosisAlerts();
+}
+
+// ============ STATE ============
+const state = {
+  live: { gateways: [], statusHistory: [], map: null, layers: [], overlapLayers: [], storageKey: 'live_gateways_v3', measureMode: false, measurePoints: [], measureLayers: [], activeSites: new Set(), activeRfRegions: new Set(), activeTags: new Set(), activeStatuses: new Set(), activeDiagFilter: false, editingIdx: -1 },
+  planning: { gateways: [], map: null, layers: [], overlapLayers: [], storageKey: 'planning_gateways_v3', measureMode: false, measurePoints: [], measureLayers: [], activeSites: new Set(), activeRfRegions: new Set(), activeTags: new Set(), activeStatuses: new Set(), activeDiagFilter: false, editingIdx: -1 }
+};
+
+// ============ MAP INIT ============
+function initMap(tab){
+  const m = L.map(tab + '_map', {zoomControl:true}).setView([10.895, 123.07], 12);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {attribution:'Esri World Imagery'}).addTo(m);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}').addTo(m);
+  state[tab].map = m;
+
+  // Right-click to add gateway at cursor
+  m.on('contextmenu', (e) => {
+    if(state[tab].measureMode) return;
+    document.getElementById(tab + '_lat').value = e.latlng.lat.toFixed(6);
+    document.getElementById(tab + '_lon').value = e.latlng.lng.toFixed(6);
+    const nameEl = document.getElementById(tab + '_name');
+    if(!nameEl.value) nameEl.focus();
+    else nameEl.focus();
+    // Scroll sidebar to Add form
+    document.querySelector(`#panel-${tab} .sidebar-scroll`).scrollTo({top: 250, behavior:'smooth'});
+  });
+
+  // Click for measure tool
+  m.on('click', (e) => {
+    if(!state[tab].measureMode) return;
+    handleMeasureClick(tab, e.latlng);
+  });
+}
+
+// ============ SEARCH & FILTER ============
+function currentFilter(tab){
+  const searchQ = document.getElementById(tab + '_search').value.trim().toLowerCase();
+  const activeSites = state[tab].activeSites;
+  const activeRfRegions = state[tab].activeRfRegions;
+  const activeTags = state[tab].activeTags;
+  const activeStatuses = state[tab].activeStatuses;
+  return state[tab].gateways.filter(gw => {
+    if(activeSites.size > 0){
+      const site = gw.site || '(no site)';
+      if(!activeSites.has(site)) return false;
+    }
+    if(activeRfRegions.size > 0){
+      const rfRegion = gw.rfRegion || '(no RF region)';
+      if(!activeRfRegions.has(rfRegion)) return false;
+    }
+    if(activeTags && activeTags.size > 0){
+      const gwTags = gw.tags && gw.tags.length ? gw.tags : ['(no tag)'];
+      const hasMatch = gwTags.some(t => activeTags.has(t));
+      if(!hasMatch) return false;
+    }
+    if(activeStatuses && activeStatuses.size > 0){
+      if(!activeStatuses.has(gw.status || 'unknown')) return false;
+    }
+    if(state[tab].activeDiagFilter){
+      if(!computeDiagnosis(gw)) return false;
+    }
+    if(searchQ){
+      const hay = `${gw.name} ${gw.lrr||''} ${gw.site||''} ${gw.rfRegion||''} ${gw.notes||''} ${(gw.tags||[]).join(' ')}`.toLowerCase();
+      if(!hay.includes(searchQ)) return false;
+    }
+    return true;
+  });
+}
+// Sidebar is hidden by default (map gets full width); this just toggles a
+// class on #main since both tab panels' .sidebar elements are covered by
+// the same CSS rule. Leaflet needs a nudge (invalidateSize) after the
+// container size changes, otherwise it keeps rendering at the old width.
+function toggleSidebar(){
+  const main = document.getElementById('main');
+  main.classList.toggle('sidebar-hidden');
+  setTimeout(() => {
+    ['live','planning'].forEach(t => { if(state[t].map) state[t].map.invalidateSize(); });
+  }, 0);
+}
+// Collapses the "Actility ThingPark Wireless" block (credentials, sync
+// button, CORS/field-mapping caveats) once it's been set up, since it's the
+// tallest section in the sidebar and mostly only needs attention once.
+function toggleTpwSection(){
+  const body = document.getElementById('tpw_section_body');
+  const btn = document.getElementById('tpw_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Collapses the "Add Deployed Gateway" form -- useful once your fleet is
+// mostly synced from ThingPark and you rarely need to add one by hand.
+function toggleAddGwSection(){
+  const body = document.getElementById('addgw_section_body');
+  const btn = document.getElementById('addgw_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Collapses the "Currently Down" table on the NOC dashboard -- keeps the
+// page short when a lot of gateways are down at once. Collapsing doesn't
+// stop the data from updating underneath, it just hides the table.
+function toggleNocDownSection(){
+  const body = document.getElementById('noc_down_section_body');
+  const btn = document.getElementById('noc_down_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Same collapse behavior for "By Site" -- a large fleet can have a lot of
+// sites, and this keeps the dashboard from getting unwieldy.
+function toggleNocSiteSection(){
+  const body = document.getElementById('noc_site_section_body');
+  const btn = document.getElementById('noc_site_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+function clearSearch(tab){
+  document.getElementById(tab + '_search').value = '';
+  renderList(tab); renderMap(tab);
+}
+const _tpwDebounceTimers = {};
+// Large fleets make renderMap (incl. overlap detection) expensive enough
+// that re-running it on every keystroke visibly lags typing — debounce it.
+function debouncedRenderTab(tab){
+  clearTimeout(_tpwDebounceTimers[tab]);
+  _tpwDebounceTimers[tab] = setTimeout(() => { renderList(tab); renderMap(tab); }, 250);
+}
+function renderSiteChips(tab){
+  const sites = new Set(state[tab].gateways.map(g => g.site || '(no site)'));
+  const chipsEl = document.getElementById(tab + '_site_chips');
+  if(sites.size <= 1 && !sites.has('(no site)')){ chipsEl.innerHTML=''; return; }
+  const arr = Array.from(sites).sort();
+  chipsEl.innerHTML = arr.map(s => {
+    const active = state[tab].activeSites.has(s);
+    return `<span class="chip ${active?'active':''}" onclick="toggleSite('${tab}','${s.replace(/'/g,"\\'")}')">${s}</span>`;
+  }).join('');
+}
+function toggleSite(tab, site){
+  const s = state[tab].activeSites;
+  if(s.has(site)) s.delete(site); else s.add(site);
+  renderSiteChips(tab); renderList(tab); renderMap(tab);
+}
+// RF Region and Tag filters used to render as one chip per distinct value —
+// fine for RF Region (a handful of channel plans) but Tags routinely has
+// hundreds of distinct project codes, turning into an unusable wall of
+// buttons. Both now use a search box: type to narrow the list down to
+// matches, and any already-active selection stays visible/removable even
+// while the search text doesn't match it, so applying a filter then typing
+// something else never silently drops it.
+const CHIP_SEARCH_LIMIT = 40;
+function renderRfRegionChips(tab){
+  const chipsEl = document.getElementById(tab + '_rfregion_chips');
+  if(state[tab].gateways.length === 0){ chipsEl.innerHTML=''; return; }
+  const regions = new Set(state[tab].gateways.map(g => g.rfRegion || '(no RF region)'));
+  const searchEl = document.getElementById(tab + '_rfregion_search');
+  const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  let arr = Array.from(regions).sort();
+  if(q) arr = arr.filter(r => r.toLowerCase().includes(q));
+  state[tab].activeRfRegions.forEach(r => { if(regions.has(r) && !arr.includes(r)) arr.unshift(r); });
+  const shown = arr.slice(0, CHIP_SEARCH_LIMIT);
+  const extra = arr.length - shown.length;
+  chipsEl.innerHTML = shown.map(r => {
+    const active = state[tab].activeRfRegions.has(r);
+    return `<span class="chip ${active?'active':''}" onclick="toggleRfRegion('${tab}','${r.replace(/'/g,"\\'")}')">${r}</span>`;
+  }).join('') + (extra > 0 ? `<div style="font-size:10px;color:var(--sub);width:100%;margin-top:4px;">+${extra} more — narrow your search</div>` : '');
+}
+function toggleRfRegion(tab, region){
+  const s = state[tab].activeRfRegions;
+  if(s.has(region)) s.delete(region); else s.add(region);
+  renderRfRegionChips(tab); renderList(tab); renderMap(tab);
+}
+// Actility "Tags" (administrative tags used to group base stations into
+// projects, e.g. "PWX", "Radius") -- surfaced here as another filter chip
+// row so a project's stations can be isolated the same way Actility's own
+// UI lets you filter by tag. Unlike RF Region, a fleet can easily have
+// hundreds of distinct tags, so nothing is shown until the user searches
+// (aside from whatever tags are already selected).
+function renderTagChips(tab){
+  const chipsEl = document.getElementById(tab + '_tag_chips');
+  if(!chipsEl) return;
+  if(state[tab].gateways.length === 0){ chipsEl.innerHTML=''; return; }
+  const tags = new Set();
+  state[tab].gateways.forEach(g => (g.tags && g.tags.length ? g.tags : ['(no tag)']).forEach(t => tags.add(t)));
+  if(tags.size <= 1 && !tags.has('(no tag)')){ chipsEl.innerHTML=''; return; }
+  const searchEl = document.getElementById(tab + '_tag_search');
+  const q = searchEl ? searchEl.value.trim().toLowerCase() : '';
+  const allSorted = Array.from(tags).sort();
+  let arr = q ? allSorted.filter(t => t.toLowerCase().includes(q)) : [];
+  state[tab].activeTags.forEach(t => { if(tags.has(t) && !arr.includes(t)) arr.unshift(t); });
+  const shown = arr.slice(0, CHIP_SEARCH_LIMIT);
+  const extra = arr.length - shown.length;
+  const hint = (!q && state[tab].activeTags.size === 0)
+    ? `<div style="font-size:10.5px;color:var(--sub);font-style:italic;">Type above to search ${allSorted.length} tags…</div>`
+    : '';
+  chipsEl.innerHTML = hint + shown.map(t => {
+    const active = state[tab].activeTags.has(t);
+    return `<span class="chip ${active?'active':''}" onclick="toggleTag('${tab}','${t.replace(/'/g,"\\'")}')">${t}</span>`;
+  }).join('') + (extra > 0 ? `<div style="font-size:10px;color:var(--sub);width:100%;margin-top:4px;">+${extra} more — narrow your search</div>` : '');
+}
+function toggleTag(tab, tag){
+  const s = state[tab].activeTags;
+  if(s.has(tag)) s.delete(tag); else s.add(tag);
+  renderTagChips(tab); renderList(tab); renderMap(tab);
+}
+
+// Makes the "Active" / "Inactive" numbers in the stats bar act as filter
+// buttons (single-select -- a gateway can't be both, so clicking one
+// replaces rather than adds to the selection). Clicking the currently
+// selected one again clears the filter back to "show all".
+function toggleStatusFilter(tab, status){
+  const s = state[tab].activeStatuses;
+  if(s.has(status)){
+    s.clear();
+  } else {
+    s.clear();
+    s.add(status);
+  }
+  renderList(tab); renderMap(tab);
+}
+
+// ============ FILTER ENV OPTIONS BY TYPE ============
+function filterEnvOptions(tab){
+  const type = document.getElementById(tab + '_type').value;
+  const envs = type === 'indoor' ? INDOOR_ENVS : OUTDOOR_ENVS;
+  const envEl = document.getElementById(tab + '_env');
+  const currentVal = envEl.value;
+  envEl.innerHTML = envs.map(e => `<option value="${e}">${ENV_LABEL[e]}</option>`).join('');
+  if(envs.includes(currentVal)) envEl.value = currentVal;
+}
+
+// ============ OVERLAP DETECTION ============
+// For each gateway pair, if their coverage circles intersect (distance < r1+r2),
+// draw the overlap as a cyan-tinted polygon
+function haversineM(lat1, lon1, lat2, lon2){
+  const R = 6371000, toRad = Math.PI/180;
+  const dLat = (lat2-lat1)*toRad, dLon = (lon2-lon1)*toRad;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*toRad)*Math.cos(lat2*toRad)*Math.sin(dLon/2)**2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+// Redundancy-zone/overlap detection used to auto-disable above 300 active
+// gateways (the pairwise O(n^2) scan gets slow enough to visibly lag the UI
+// at real scale -- e.g. 1600 gateways = ~1.3M pair checks). Per explicit
+// request, every gateway now gets counted/highlighted regardless of fleet
+// size, even if a very large fleet makes this take noticeably longer.
+function drawOverlaps(tab, filtered){
+  const s = state[tab];
+  s.overlapLayers.forEach(l => s.map.removeLayer(l));
+  s.overlapLayers = [];
+  const active = filtered.filter(g => g.status !== 'inactive' && g.lat && g.lon);
+  for(let i=0;i<active.length;i++){
+    for(let j=i+1;j<active.length;j++){
+      const a=active[i], b=active[j];
+      const rA = effectiveModel(a).maxRange, rB = effectiveModel(b).maxRange;
+      const d = haversineM(+a.lat, +a.lon, +b.lat, +b.lon);
+      if(d >= rA + rB) continue;
+      // Approximate overlap by drawing a filled cyan circle at midpoint
+      // with radius proportional to (rA+rB-d)/2 (rough overlap width)
+      const midLat = (+a.lat + +b.lat) / 2;
+      const midLon = (+a.lon + +b.lon) / 2;
+      const overlapR = Math.min(rA, rB, (rA + rB - d) / 2);
+      const c = L.circle([midLat, midLon], {
+        radius: overlapR, color: '#00e5ff', weight: 1, fillColor: '#00e5ff',
+        fillOpacity: 0.18, dashArray: '3,3'
+      }).addTo(s.map);
+      c.bindPopup(`<b>Coverage overlap</b><br>${a.name} ↔ ${b.name}<br>Distance: ${(d/1000).toFixed(2)}km`);
+      s.overlapLayers.push(c);
+    }
+  }
+}
+
+// ============ RENDER MAP ============
+function renderMap(tab){
+  const s = state[tab];
+  if(!s.map) return;
+  s.layers.forEach(l => s.map.removeLayer(l));
+  s.layers = [];
+
+  const toggleEl = document.getElementById(tab + '_simpleMode');
+  let simpleMode = toggleEl.checked;
+
+  const filtered = currentFilter(tab);
+
+  filtered.forEach(gw => {
+    const lat = parseFloat(gw.lat), lon = parseFloat(gw.lon);
+    if(isNaN(lat) || isNaN(lon)) return;
+    const mdl = effectiveModel(gw);
+    const rssiVal = (gw.rssi !== '' && gw.rssi != null && !isNaN(gw.rssi)) ? parseFloat(gw.rssi) : null;
+
+    if(!simpleMode){
+      const isInactive = gw.status === 'inactive';
+      const bandCount = 18;
+      for(let i = bandCount; i >= 0; i--){
+        const d = D0_M + (mdl.maxRange - D0_M) * (i/bandCount);
+        const rssi = rssiAt(gw, d);
+        const color = isInactive ? '#5a5a5a' : rssiColor(rssi);
+        if(!color) continue;
+        s.layers.push(L.circle([lat,lon], {
+          radius:d, color:null, fillColor:color, fillOpacity: isInactive ? 0.10 : 0.15, stroke:false
+        }).addTo(s.map));
+      }
+      s.layers.push(L.circle([lat,lon], {
+        radius: mdl.maxRange, color:'#ffffff', weight:1, dashArray:'4,6', fill:false, opacity:0.55
+      }).addTo(s.map));
+      if(gw.type !== 'indoor'){
+        s.layers.push(L.circle([lat,lon], {
+          radius: 7210, color:'#9c4a00', weight:1.5, dashArray:'2,8', fill:false, opacity:0.85
+        }).addTo(s.map));
+      }
+    }
+
+    const isInactiveMarker = gw.status === 'inactive';
+    const isUnknownMarker = gw.status === 'unknown';
+    const typeColor = tab === 'live'
+      ? (isInactiveMarker ? '#e5484d' : (isUnknownMarker ? '#ffb700' : '#2ecc40'))
+      : (isInactiveMarker ? '#5a5a5a' : (gw.type === 'indoor' ? '#7fb8ff' : '#c792ea'));
+    const label = gw.type === 'indoor' ? 'IN' : (tab==='planning' ? 'POC' : 'TX');
+    const borderStyle = isInactiveMarker ? 'border:2px solid #e5484d;' : 'border:1px solid white;';
+    const inactiveIcon = isInactiveMarker ? '<span style="color:#e5484d;margin-left:3px;">⚠</span>' : '';
+    const icon = L.divIcon({
+      html:`<div style="background:${typeColor};border-radius:3px;padding:2px 5px;${borderStyle}font-size:10px;font-weight:bold;color:#111;white-space:nowrap;">${label}${inactiveIcon}</div>`,
+      className:'', iconSize:[isInactiveMarker?42:34,16], iconAnchor:[isInactiveMarker?21:17,8]
+    });
+    const conf = confidence(gw);
+    const rssiText = rssiVal !== null ? `${rssiVal} dBm` : (tab==='planning' ? 'proposed — no data' : 'not measured');
+    const statusText = gw.status === 'inactive' ? '<span style="color:#e5484d;font-weight:bold;">⚠ INACTIVE</span>' :
+                       gw.status === 'unknown' ? '<span style="color:#ffb700;">Unknown</span>' :
+                       '<span style="color:#2ecc40;">Active</span>';
+    const popupDiag = tab === 'live' ? computeDiagnosis(gw) : null;
+    const popupHtml = `
+      <b>${gw.name}</b><br>
+      ${gw.lrr ? gw.lrr+' ' : ''}${gw.site ? '&middot; '+gw.site : ''}<br>
+      <b>Status:</b> ${statusText}<br>
+      <b>Type:</b> ${gw.type === 'indoor' ? 'Indoor' : 'Outdoor'}<br>
+      <b>Environment:</b> ${ENV_LABEL[gw.env] || 'Suburban'}<br>
+      <b>Modeled range:</b> ~${mdl.maxRange}m ceiling<br>
+      <b>Measured RSSI:</b> ${rssiText}<br>
+      <b>Confidence:</b> ${CONF_LABEL[conf]}
+      ${tab==='live' && gw.lastSeen ? '<br><b>Last seen:</b> '+formatAgo(gw.lastSeen)+' ('+new Date(gw.lastSeen).toLocaleString()+')' : ''}
+      ${gw.gatewayId ? '<br><b>Gateway ID:</b> '+gw.gatewayId : ''}
+      ${gw.iccid ? '<br><b>ICCID:</b> '+gw.iccid : ''}
+      ${gw.simStatus ? '<br><b>SIM status:</b> ' + (gw.simStatus==='active' ? '<span style="color:#2ecc40;">Active</span>' : gw.simStatus==='inactive' ? '<span style="color:#e5484d;">Inactive/Paused</span>' : 'Unknown') : ''}
+      ${gw.simMsisdn ? '<br><b>MSISDN:</b> '+gw.simMsisdn : ''}
+      ${gw.simLastChecked ? '<br><b>SIM checked:</b> '+new Date(gw.simLastChecked).toLocaleString()+(gw.simSource==='csv'?' (CSV import)':gw.simSource==='api'?' (API)':'') : ''}
+      ${popupDiag ? '<br><br><b style="color:'+(popupDiag.color==='danger'?'#e5484d':'#ffb700')+';">⚠ '+popupDiag.label+':</b> '+popupDiag.detail : ''}
+      ${gw.notes ? '<br><br><i>'+gw.notes+'</i>' : ''}
+    `;
+    const marker = L.marker([lat,lon], {icon}).addTo(s.map);
+    marker.bindPopup(popupHtml);
+    s.layers.push(marker);
+  });
+
+  // Overlap layer (below markers, above gradient)
+  const overlapEl = document.getElementById(tab + '_showOverlap');
+  if(overlapEl.checked && !simpleMode){
+    drawOverlaps(tab, filtered);
+  } else {
+    s.overlapLayers.forEach(l => s.map.removeLayer(l));
+    s.overlapLayers = [];
+  }
+
+  updateStats(tab, filtered);
+}
+
+// ============ STATS ============
+function updateStats(tab, filtered){
+  filtered = filtered || currentFilter(tab);
+  const withGps = filtered.filter(g => g.lat !== '' && g.lon !== '').length;
+  const indoor = filtered.filter(g => g.type === 'indoor').length;
+  const outdoor = filtered.filter(g => g.type !== 'indoor').length;
+  const inactive = filtered.filter(g => g.status === 'inactive').length;
+  const activeCount = filtered.filter(g => g.status === 'active').length;
+  const noRssi = tab === 'live' ? filtered.filter(g => g.rssi === '' || g.rssi == null).length : 0;
+  const diagCount = tab === 'live' ? filtered.filter(g => computeDiagnosis(g)).length : 0;
+  // Overlap regions = connected components in the "coverage overlaps" graph
+  // (A-B connected if their coverage circles touch, transitively grouped)
+  const active = filtered.filter(g => g.status !== 'inactive' && g.lat && g.lon);
+  let overlapRegions = 0, overlappingPairs = 0;
+  {
+    const parent = active.map((_,i) => i);
+    const find = (x) => { while(parent[x] !== x){ parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const union = (a,b) => { const ra=find(a), rb=find(b); if(ra!==rb) parent[ra]=rb; };
+    for(let i=0;i<active.length;i++) for(let j=i+1;j<active.length;j++){
+      const a=active[i], b=active[j];
+      const rA = effectiveModel(a).maxRange, rB = effectiveModel(b).maxRange;
+      if(haversineM(+a.lat,+a.lon,+b.lat,+b.lon) < rA+rB){ union(i,j); overlappingPairs++; }
+    }
+    // Count components with size >= 2 (a component of 1 = a gateway with no overlaps, not a region)
+    const componentSizes = {};
+    for(let i=0;i<active.length;i++){
+      const r = find(i);
+      componentSizes[r] = (componentSizes[r] || 0) + 1;
+    }
+    overlapRegions = Object.values(componentSizes).filter(sz => sz >= 2).length;
+  }
+  const bar = document.getElementById(tab + '_stats');
+  bar.innerHTML = `
+    <div class="stat"><div class="num">${filtered.length}</div><div class="lbl">Shown</div></div>
+    <div class="stat"><div class="num">${outdoor}</div><div class="lbl">Outdoor</div></div>
+    <div class="stat"><div class="num">${indoor}</div><div class="lbl">Indoor</div></div>
+    <div class="stat"><div class="num">${withGps}</div><div class="lbl">Located</div></div>
+    <div class="stat overlap" title="Distinct areas where 2+ gateways provide redundant coverage. Underlying pair count: ${overlappingPairs}"><div class="num">${overlapRegions}</div><div class="lbl">Redundancy zones</div></div>
+    ${tab === 'live' ? `<div class="stat clickable ${state[tab].activeStatuses.has('active')?'filter-on':''}" onclick="toggleStatusFilter('${tab}','active')" title="Click to show only active gateways"><div class="num">${activeCount}</div><div class="lbl">Active</div></div>` : ''}
+    ${tab === 'live' ? `<div class="stat clickable ${inactive>0 && !state[tab].activeStatuses.has('inactive')?'warn':''} ${state[tab].activeStatuses.has('inactive')?'filter-on':''}" onclick="toggleStatusFilter('${tab}','inactive')" title="Click to show only inactive gateways"><div class="num">${inactive}</div><div class="lbl">Inactive</div></div>` : ''}
+    ${tab === 'live' ? `<div class="stat ${noRssi>0?'warn':''}"><div class="num">${noRssi}</div><div class="lbl">No RSSI</div></div>` : ''}
+    ${tab === 'live' ? `<div class="stat clickable ${diagCount>0 && !state[tab].activeDiagFilter?'warn':''} ${state[tab].activeDiagFilter?'filter-on':''}" onclick="toggleDiagFilter('${tab}')" title="Click to show only gateways flagged by the Gateway+SIM cross-check"><div class="num">${diagCount}</div><div class="lbl">SIM Issues</div></div>` : ''}
+  `;
+}
+
+// ============ LIST ============
+function renderList(tab){
+  const s = state[tab];
+  const filtered = currentFilter(tab);
+  const listEl = document.getElementById(tab + '_list');
+  document.getElementById(tab + '_count').textContent = `${filtered.length}/${s.gateways.length}`;
+  renderSiteChips(tab);
+  renderRfRegionChips(tab);
+  renderTagChips(tab);
+  if(filtered.length === 0){
+    listEl.innerHTML = `<div class="empty-hint">${s.gateways.length === 0 ? 'No '+(tab==='live'?'gateways':'proposed sites')+' yet.' : 'No matches — clear search or filters.'}</div>`;
+    return;
+  }
+  listEl.innerHTML = filtered.map((gw) => {
+    const i = s.gateways.indexOf(gw);
+    if(i === s.editingIdx) return renderEditForm(tab, gw, i);
+    const hasLoc = gw.lat !== '' && gw.lon !== '';
+    const gpsBadge = hasLoc ? '' : '<span class="badge warn">NO GPS</span>';
+    const inactiveBadge = gw.status === 'inactive' ? '<span class="badge conf-lo">INACTIVE</span>' : '';
+    const isStale = tab === 'live' && gw.status === 'active' && gw.lastSeen && (Date.now() - new Date(gw.lastSeen).getTime()) > (getNocSettings().staleMinutes*60000);
+    const staleBadge = isStale ? `<span class="badge stale" title="Marked active but no uplink in over ${getNocSettings().staleMinutes} min">STALE</span>` : '';
+    const typeBadge = `<span class="badge ${gw.type === 'indoor' ? 'indoor' : 'outdoor'}">${gw.type === 'indoor' ? 'INDOOR' : 'OUTDOOR'}</span>`;
+    const envBadge = gw.env && gw.env !== 'mixed' ? `<span class="badge env">${ENV_LABEL[gw.env]||''}</span>` : '';
+    const siteBadge = gw.site ? `<span class="badge site">${gw.site}</span>` : '';
+    const rfRegionBadge = gw.rfRegion ? `<span class="badge rfregion">${gw.rfRegion}</span>` : '';
+    const actilityTagBadges = (gw.tags||[]).map(t => `<span class="badge site" title="Actility tag">${t}</span>`).join('');
+    const conf = confidence(gw);
+    const confBadge = `<span class="badge conf-${conf}">${CONF_LABEL[conf]}</span>`;
+    const rssiDisplay = (gw.rssi !== '' && gw.rssi != null) ? gw.rssi+' dBm' : (tab==='live' ? 'no RSSI' : 'estimate');
+    const simBadge = (tab==='live' && gw.simStatus) ? `<span class="badge sim-${gw.simStatus}">SIM: ${gw.simStatus.toUpperCase()}</span>` : '';
+    const diag = tab==='live' ? computeDiagnosis(gw) : null;
+    const diagBadge = diag ? `<span class="badge diag-${diag.color}" title="${diag.detail.replace(/"/g,'&quot;')}">⚠ ${diag.label}</span>` : '';
+    return `<div class="gw-item" onclick="jumpTo('${tab}', ${i})">
+      <div class="actions">
+        <button class="action-btn" onclick="event.stopPropagation();startEdit('${tab}',${i})">edit</button>
+        <button class="action-btn del" onclick="event.stopPropagation();removeGateway('${tab}', ${i})">delete</button>
+      </div>
+      <div class="name">${gw.name}${gpsBadge}${inactiveBadge}${staleBadge}</div>
+      <div class="meta">${gw.lrr || (tab==='live'?'no LRR-ID':'')} &middot; ${hasLoc ? gw.lat+', '+gw.lon : 'no coordinates'} &middot; ${rssiDisplay}${tab==='live' ? nocMetaSuffix(gw) : ''}</div>
+      ${gw.notes ? `<div class="notes">${gw.notes}</div>` : ''}
+      <div class="tags">${typeBadge}${siteBadge}${rfRegionBadge}${envBadge}${confBadge}${actilityTagBadges}${simBadge}${diagBadge}</div>
+    </div>`;
+  }).join('');
+}
+
+// ============ EDIT ============
+function renderEditForm(tab, gw, i){
+  const envs = gw.type === 'indoor' ? INDOOR_ENVS : OUTDOOR_ENVS;
+  return `<div class="edit-form">
+    <label>Name</label>
+    <input id="edit_name_${i}" value="${(gw.name||'').replace(/"/g,'&quot;')}">
+    <div class="row2">
+      <div><label>${tab==='live'?'LRR-ID':'Reference'}</label><input id="edit_lrr_${i}" value="${gw.lrr||''}"></div>
+      <div><label>Site</label><input id="edit_site_${i}" value="${gw.site||''}"></div>
+    </div>
+    <label>RF Region</label>
+    <input id="edit_rfregion_${i}" value="${gw.rfRegion||''}">
+    <div class="row2">
+      <div><label>Latitude</label><input id="edit_lat_${i}" value="${gw.lat}"></div>
+      <div><label>Longitude</label><input id="edit_lon_${i}" value="${gw.lon}"></div>
+    </div>
+    <div class="row2">
+      <div><label>Type</label>
+        <select id="edit_type_${i}" onchange="rewriteEditEnv(${i}, this.value)">
+          <option value="outdoor" ${gw.type!=='indoor'?'selected':''}>Outdoor</option>
+          <option value="indoor" ${gw.type==='indoor'?'selected':''}>Indoor</option>
+        </select>
+      </div>
+      <div><label>Status</label>
+        <select id="edit_status_${i}">
+          <option value="active" ${gw.status==='active'?'selected':''}>Active</option>
+          <option value="inactive" ${gw.status==='inactive'?'selected':''}>Inactive</option>
+          <option value="unknown" ${gw.status==='unknown'?'selected':''}>Unknown</option>
+        </select>
+      </div>
+    </div>
+    <label>Environment</label>
+    <select id="edit_env_${i}">
+      ${envs.map(e => `<option value="${e}" ${gw.env===e?'selected':''}>${ENV_LABEL[e]}</option>`).join('')}
+    </select>
+    ${tab==='live' ? `<label>RSSI peak (dBm)</label><input id="edit_rssi_${i}" value="${gw.rssi||''}">` : ''}
+    ${tab==='live' ? `<div class="row2"><div><label>Gateway ID</label><input id="edit_gatewayId_${i}" value="${(gw.gatewayId||'').replace(/"/g,'&quot;')}"></div><div><label>ICCID</label><input id="edit_iccid_${i}" value="${(gw.iccid||'').replace(/"/g,'&quot;')}"></div></div>` : ''}
+    <label>Notes</label>
+    <textarea id="edit_notes_${i}" rows="2">${gw.notes||''}</textarea>
+    <div class="row-actions">
+      <button class="save-btn" onclick="saveEdit('${tab}',${i})">Save</button>
+      <button class="cancel-btn" onclick="cancelEdit('${tab}')">Cancel</button>
+    </div>
+  </div>`;
+}
+function rewriteEditEnv(i, type){
+  const envs = type === 'indoor' ? INDOOR_ENVS : OUTDOOR_ENVS;
+  const envEl = document.getElementById('edit_env_'+i);
+  envEl.innerHTML = envs.map(e => `<option value="${e}">${ENV_LABEL[e]}</option>`).join('');
+}
+function startEdit(tab, i){
+  state[tab].editingIdx = i;
+  renderList(tab);
+}
+function cancelEdit(tab){
+  state[tab].editingIdx = -1;
+  renderList(tab);
+}
+function saveEdit(tab, i){
+  const g = state[tab].gateways[i];
+  const prevStatus = g.status;
+  g.name = document.getElementById('edit_name_'+i).value.trim();
+  g.lrr = document.getElementById('edit_lrr_'+i).value.trim();
+  g.site = document.getElementById('edit_site_'+i).value.trim();
+  g.rfRegion = document.getElementById('edit_rfregion_'+i).value.trim();
+  g.lat = document.getElementById('edit_lat_'+i).value.trim();
+  g.lon = document.getElementById('edit_lon_'+i).value.trim();
+  g.type = document.getElementById('edit_type_'+i).value;
+  g.status = document.getElementById('edit_status_'+i).value;
+  g.env = document.getElementById('edit_env_'+i).value;
+  g.notes = document.getElementById('edit_notes_'+i).value.trim();
+  if(tab === 'live'){
+    const r = document.getElementById('edit_rssi_'+i).value.trim();
+    g.rssi = r !== '' ? parseFloat(r) : '';
+    const gwIdEl = document.getElementById('edit_gatewayId_'+i);
+    const iccidEl = document.getElementById('edit_iccid_'+i);
+    if(gwIdEl) g.gatewayId = gwIdEl.value.trim();
+    if(iccidEl) g.iccid = iccidEl.value.trim();
+    recordStatusChange(g, prevStatus, g.status);
+    flushNocInactiveBatch();
+  }
+  state[tab].editingIdx = -1;
+  renderList(tab); renderMap(tab); save(tab);
+}
+
+// ============ JUMP TO GATEWAY (search click) ============
+function jumpTo(tab, i){
+  const gw = state[tab].gateways[i];
+  if(!gw.lat || !gw.lon) return;
+  state[tab].map.setView([+gw.lat, +gw.lon], 15);
+}
+
+// ============ MEASURE TOOL ============
+function toggleMeasure(tab){
+  const s = state[tab];
+  s.measureMode = !s.measureMode;
+  const btn = document.getElementById(tab + '_measureBtn');
+  btn.classList.toggle('active', s.measureMode);
+  s.map.getContainer().style.cursor = s.measureMode ? 'crosshair' : '';
+  if(!s.measureMode){
+    s.measurePoints = [];
+    s.measureLayers.forEach(l => s.map.removeLayer(l));
+    s.measureLayers = [];
+  }
+}
+function handleMeasureClick(tab, latlng){
+  const s = state[tab];
+  s.measurePoints.push(latlng);
+  const pt = L.circleMarker(latlng, {radius:5, color:'#fff', fillColor:'#2ec4b6', fillOpacity:1, weight:2}).addTo(s.map);
+  s.measureLayers.push(pt);
+  if(s.measurePoints.length >= 2){
+    const a = s.measurePoints[s.measurePoints.length-2];
+    const b = s.measurePoints[s.measurePoints.length-1];
+    const d = haversineM(a.lat, a.lng, b.lat, b.lng);
+    const line = L.polyline([a, b], {color:'#2ec4b6', weight:2, dashArray:'6,4'}).addTo(s.map);
+    s.measureLayers.push(line);
+    const mid = L.latLng((a.lat+b.lat)/2, (a.lng+b.lng)/2);
+    const dText = d < 1000 ? `${d.toFixed(0)} m` : `${(d/1000).toFixed(2)} km`;
+    const lbl = L.marker(mid, {icon: L.divIcon({html:`<div class="measure-label">${dText}</div>`, className:'', iconSize:[80,20], iconAnchor:[40,10]})}).addTo(s.map);
+    s.measureLayers.push(lbl);
+  }
+}
+
+// ============ PNG EXPORT ============
+async function exportPNG(tab){
+  const mapEl = document.getElementById(tab + '_map').parentElement;
+  const btn = event.target;
+  const originalText = btn.textContent;
+  btn.textContent = '⏳ Rendering...';
+  btn.disabled = true;
+  try {
+    const canvas = await html2canvas(mapEl, {useCORS: true, allowTaint: true, backgroundColor: '#0d1117'});
+    const link = document.createElement('a');
+    const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+    link.download = `LoRaWAN_${tab}_${ts}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch(err){
+    alert('Screenshot failed: ' + err.message + '\n\nNote: satellite tiles may be blocked by CORS in some browsers. Try a screen-capture tool as a fallback.');
+  } finally {
+    btn.textContent = originalText;
+    btn.disabled = false;
+  }
+}
+
+// ============ PERSISTENCE ============
+async function save(tab){
+  try{ if(window.storage) await window.storage.set(state[tab].storageKey, JSON.stringify(state[tab].gateways)); }
+  catch(e){ console.warn('Storage save failed', e); }
+}
+async function load(tab){
+  try{
+    if(window.storage){
+      const res = await window.storage.get(state[tab].storageKey);
+      if(res && res.value){ state[tab].gateways = JSON.parse(res.value); return true; }
+    }
+  }catch(e){}
+  return false;
+}
+
+// ============ GAP-FILL RECOMMENDER (Planning tab only) ============
+// Simple deterministic geometric optimizer:
+// 1. Grid the visible map region
+// 2. Filter out points already covered by any existing gateway (Live + Planning)
+// 3. For each remaining candidate, compute new area covered if outdoor gateway placed there
+// 4. Return top N candidates, using greedy non-overlap to avoid stacking suggestions
+const SUGGEST_GATEWAY = { type:'outdoor', env:'mixed' }; // for range calc
+function runSuggest(){
+  const map = state.planning.map;
+  const bounds = map.getBounds();
+  const sw = bounds.getSouthWest(), ne = bounds.getNorthEast();
+
+  // Grid density — ~30x30 candidates in current view (900 candidates, fast)
+  const nGrid = 30;
+  const latStep = (ne.lat - sw.lat) / nGrid;
+  const lonStep = (ne.lng - sw.lng) / nGrid;
+
+  // All existing coverage sources (Live active + Planning existing)
+  const existing = [
+    ...state.live.gateways.filter(g => g.status !== 'inactive' && g.lat && g.lon),
+    ...state.planning.gateways.filter(g => g.lat && g.lon)
+  ].map(g => ({ lat:+g.lat, lon:+g.lon, r: effectiveModel(g).maxRange }));
+
+  // Suggestion gateway range (outdoor, suburban default)
+  const suggR = effectiveModel(SUGGEST_GATEWAY).maxRange;
+
+  // Score candidate = area within suggR that isn't already covered
+  // Approximated by sampling ~50 points within candidate's coverage disk
+  const N_SAMPLE = 50;
+  function score(lat, lon){
+    if(isCovered(lat, lon, existing)) return 0; // don't place inside existing coverage
+    let uncovered = 0;
+    for(let k=0; k<N_SAMPLE; k++){
+      // Sample within disk of radius suggR
+      const rho = suggR * Math.sqrt(Math.random());
+      const theta = Math.random() * 2 * Math.PI;
+      const dLat = (rho * Math.cos(theta)) / 111320;
+      const dLon = (rho * Math.sin(theta)) / (111320 * Math.cos(lat * Math.PI/180));
+      if(!isCovered(lat + dLat, lon + dLon, existing)) uncovered++;
+    }
+    return uncovered / N_SAMPLE;
+  }
+  function isCovered(lat, lon, sources){
+    for(const s of sources){
+      if(haversineM(lat, lon, s.lat, s.lon) < s.r) return true;
+    }
+    return false;
+  }
+
+  // Generate candidates
+  const candidates = [];
+  for(let i=1; i<nGrid; i++){
+    for(let j=1; j<nGrid; j++){
+      const lat = sw.lat + i * latStep;
+      const lon = sw.lng + j * lonStep;
+      const sc = score(lat, lon);
+      if(sc > 0.15) candidates.push({lat, lon, score: sc});
+    }
+  }
+  candidates.sort((a,b) => b.score - a.score);
+
+  // Greedy: pick top, then filter out anything within suggR of it, repeat
+  const picks = [];
+  const MAX_PICKS = 3;
+  for(const c of candidates){
+    if(picks.length >= MAX_PICKS) break;
+    if(picks.some(p => haversineM(p.lat, p.lon, c.lat, c.lon) < suggR)) continue;
+    picks.push(c);
+  }
+
+  // Clear old suggestion markers
+  if(state.planning._suggestLayers) state.planning._suggestLayers.forEach(l => map.removeLayer(l));
+  state.planning._suggestLayers = [];
+
+  const resultsEl = document.getElementById('suggest_results');
+  if(picks.length === 0){
+    resultsEl.innerHTML = '<div class="empty-hint">No meaningful gaps in the current view — existing coverage looks complete here. Try zooming out or panning to an under-served area.</div>';
+    return;
+  }
+
+  // Draw suggestions on map
+  picks.forEach((p, idx) => {
+    const preview = L.circle([p.lat, p.lon], {
+      radius: suggR, color:'#ff9f1c', weight:2, dashArray:'8,6',
+      fillColor:'#ff9f1c', fillOpacity:0.10
+    }).addTo(map);
+    preview.bindPopup(`<b>Suggestion #${idx+1}</b><br>Est. new coverage: ${(p.score*100).toFixed(0)}% of a gateway's disk<br><i>Geometric only — check ground feasibility.</i>`);
+    state.planning._suggestLayers.push(preview);
+    const icon = L.divIcon({
+      html:`<div style="background:#ff9f1c;border-radius:50%;padding:4px 8px;border:2px solid white;font-size:11px;font-weight:bold;color:#111;">${idx+1}</div>`,
+      className:'', iconSize:[26,22], iconAnchor:[13,11]
+    });
+    const marker = L.marker([p.lat, p.lon], {icon}).addTo(map);
+    marker.bindPopup(`<b>Suggestion #${idx+1}</b><br>Lat ${p.lat.toFixed(6)}<br>Lon ${p.lon.toFixed(6)}<br>Est. new coverage: ${(p.score*100).toFixed(0)}%`);
+    state.planning._suggestLayers.push(marker);
+  });
+
+  // Render list of accept buttons
+  resultsEl.innerHTML = picks.map((p, idx) => `
+    <div class="gw-item" style="border-color:var(--accent2);cursor:default;">
+      <div class="name" style="color:var(--accent2);">Suggestion #${idx+1}</div>
+      <div class="meta">${p.lat.toFixed(6)}, ${p.lon.toFixed(6)} &middot; est. new coverage: ${(p.score*100).toFixed(0)}%</div>
+      <button class="ghost-btn" style="margin-top:6px;color:var(--accent2);border-color:var(--accent2);" onclick="acceptSuggest(${idx})">
+        + Accept as proposed site
+      </button>
+    </div>
+  `).join('');
+  // Cache picks for accept handler
+  state.planning._lastSuggest = picks;
+}
+
+function acceptSuggest(idx){
+  const picks = state.planning._lastSuggest || [];
+  const p = picks[idx];
+  if(!p) return;
+  state.planning.gateways.push({
+    name: `Gap-fill suggestion #${idx+1}`,
+    lrr: '',
+    site: 'Auto-suggested',
+    lat: p.lat.toFixed(6),
+    lon: p.lon.toFixed(6),
+    type: 'outdoor',
+    env: 'mixed',
+    status: 'active',
+    rssi: '',
+    notes: `Geometrically-suggested site (est. ${(p.score*100).toFixed(0)}% new coverage). Verify ground feasibility before deployment.`
+  });
+  renderList('planning'); renderMap('planning'); save('planning');
+}
+
+// ============ CRUD ============
+function removeGateway(tab, i){
+  if(!confirm('Delete this gateway?')) return;
+  state[tab].gateways.splice(i,1);
+  renderList(tab); renderMap(tab); save(tab);
+}
+function addGateway(tab){
+  const name = document.getElementById(tab + '_name').value.trim();
+  const lrr = document.getElementById(tab + '_lrr').value.trim();
+  const site = document.getElementById(tab + '_site').value.trim();
+  const rfRegion = document.getElementById(tab + '_rfregion').value.trim();
+  const lat = document.getElementById(tab + '_lat').value.trim();
+  const lon = document.getElementById(tab + '_lon').value.trim();
+  const type = document.getElementById(tab + '_type').value;
+  const env = document.getElementById(tab + '_env').value;
+  const status = document.getElementById(tab + '_status').value;
+  const notes = document.getElementById(tab + '_notes').value.trim();
+  const rssi = tab === 'live' ? document.getElementById('live_rssi').value.trim() : '';
+  const gatewayId = tab === 'live' ? document.getElementById('live_gatewayId').value.trim() : '';
+  const iccid = tab === 'live' ? document.getElementById('live_iccid').value.trim() : '';
+  if(!name){ alert('Name is required.'); return; }
+  if((lat && !lon) || (!lat && lon)){ alert('Enter both latitude and longitude, or leave both blank.'); return; }
+  state[tab].gateways.push({name, lrr, site, rfRegion, lat, lon, type, env, status, notes, rssi: rssi !== '' ? parseFloat(rssi) : '', gatewayId, iccid});
+  ['name','lrr','site','rfregion','lat','lon','notes','gatewayId','iccid'].forEach(f => { const el = document.getElementById(tab+'_'+f); if(el) el.value=''; });
+  if(tab==='live') document.getElementById('live_rssi').value = '';
+  renderList(tab); renderMap(tab); save(tab);
+}
+
+// ============ IMPORT/EXPORT ============
+function exportCSV(tab){
+  let csv = 'Name,LRR-ID,Site,RF_Region,Latitude,Longitude,Type,Environment,Status,RSSI_peak_dBm,Notes,Gateway_ID,ICCID,SIM_Status,SIM_IMSI,SIM_MSISDN,SIM_Last_Checked\n';
+  state[tab].gateways.forEach(g => {
+    const esc = (s) => `"${String(s||'').replace(/"/g,'""')}"`;
+    csv += [g.name, g.lrr, g.site, g.rfRegion, g.lat, g.lon, g.type||'outdoor', g.env||'mixed', g.status||'active', g.rssi, g.notes, g.gatewayId||'', g.iccid||'', g.simStatus||'', g.simImsi||'', g.simMsisdn||'', g.simLastChecked||''].map(esc).join(',') + '\n';
+  });
+  const blob = new Blob([csv], {type:'text/csv'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = (tab==='live' ? 'live_gateways_export.csv' : 'planning_sites_export.csv');
+  a.click();
+}
+function importCSV(tab, e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const text = evt.target.result;
+    // Robust CSV parser handling quoted commas/newlines
+    const rows = parseCSV(text);
+    if(rows.length < 2){ alert('CSV appears empty.'); return; }
+    const header = rows[0].map(h => h.toLowerCase().trim());
+    const col = (name) => header.indexOf(name.toLowerCase());
+    let added=0, updated=0;
+    for(let ri=1; ri<rows.length; ri++){
+      const r = rows[ri];
+      if(!r || r.length === 0 || r.every(v => !v)) continue;
+      // Support new schema; fall back gracefully for older exports
+      const entry = {
+        name: r[col('name')] || '',
+        lrr: r[col('lrr-id')] || '',
+        site: r[col('site')] || '',
+        rfRegion: r[col('rf_region')] || '',
+        lat: r[col('latitude')] || '',
+        lon: r[col('longitude')] || '',
+        type: (r[col('type')] === 'indoor' || r[col('type')] === 'outdoor') ? r[col('type')] : 'outdoor',
+        env: r[col('environment')] || 'mixed',
+        status: r[col('status')] || 'active',
+        notes: r[col('notes')] || '',
+        rssi: r[col('rssi_peak_dbm')] && r[col('rssi_peak_dbm')] !== '' ? parseFloat(r[col('rssi_peak_dbm')]) : '',
+        gatewayId: r[col('gateway_id')] || '',
+        iccid: r[col('iccid')] || '',
+        simStatus: r[col('sim_status')] || '',
+        simImsi: r[col('sim_imsi')] || '',
+        simMsisdn: r[col('sim_msisdn')] || '',
+        simLastChecked: r[col('sim_last_checked')] || ''
+      };
+      if(!entry.name) continue;
+      const key = entry.lrr && entry.lrr.trim() !== '' ? 'lrr' : 'name';
+      const idx = state[tab].gateways.findIndex(g => g[key] && entry[key] && g[key].toLowerCase() === entry[key].toLowerCase());
+      if(idx >= 0){ state[tab].gateways[idx] = entry; updated++; } else { state[tab].gateways.push(entry); added++; }
+    }
+    renderList(tab); renderMap(tab); save(tab);
+    alert(`Import complete: ${added} added, ${updated} updated.`);
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+function parseCSV(text){
+  const rows = [];
+  let cur = [], field = '', inQuotes = false;
+  for(let i=0; i<text.length; i++){
+    const c = text[i];
+    if(inQuotes){
+      if(c === '"' && text[i+1] === '"'){ field += '"'; i++; }
+      else if(c === '"'){ inQuotes = false; }
+      else field += c;
+    } else {
+      if(c === '"'){ inQuotes = true; }
+      else if(c === ','){ cur.push(field); field = ''; }
+      else if(c === '\n'){ cur.push(field); rows.push(cur); cur = []; field = ''; }
+      else if(c === '\r'){ /* skip */ }
+      else field += c;
+    }
+  }
+  if(field.length || cur.length){ cur.push(field); rows.push(cur); }
+  return rows;
+}
+function clearAll(tab){
+  if(state[tab].gateways.length === 0) return;
+  const label = tab==='live' ? 'gateways' : 'proposed sites';
+  if(confirm(`Clear all ${state[tab].gateways.length} ${label}? Export a CSV backup first if you need one.`)){
+    state[tab].gateways = [];
+    state[tab].activeSites.clear();
+    state[tab].activeRfRegions.clear();
+    state[tab].activeTags.clear();
+    state[tab].activeStatuses.clear();
+    state[tab].activeDiagFilter = false;
+    renderList(tab); renderMap(tab); save(tab);
+  }
+}
+function loadSample(tab){
+  state.live.gateways = [
+    {name:"PICO-915-00189-Barangay Hall XIX-A-PWX", lrr:"10-00-02-64", site:"Victorias", rfRegion:"AS923-3", lat:10.876215, lon:123.060623, type:'outdoor', env:'mixed', status:'active', rssi:-80, notes:''},
+    {name:"PICO-915-00545-BGY VI Salvacion", lrr:"10-00-03-0E", site:"Victorias", rfRegion:"AS923-3", lat:10.909448, lon:123.076775, type:'outdoor', env:'mixed', status:'active', rssi:-84, notes:''},
+    {name:"POU91-00525-CDRRMO Evacuation Center", lrr:"10-00-05-CA", site:"Victorias", rfRegion:"AS923-3", lat:10.889060, lon:123.052971, type:'outdoor', env:'coastal', status:'active', rssi:-38, notes:'Coastal, low-lying'},
+    {name:"POU91-00527-Police Sub Station Brgy XIII", lrr:"10-00-05-DC", site:"Victorias", rfRegion:"AS923-3", lat:10.877460, lon:123.048508, type:'outdoor', env:'mixed', status:'active', rssi:-36, notes:''},
+    {name:"POU91-00530-Victorias City Hall", lrr:"10-00-05-DA", site:"Victorias", rfRegion:"AS923-3", lat:10.900841, lon:123.071587, type:'outdoor', env:'mixed', status:'active', rssi:'', notes:'Mounted on radio tower'},
+    {name:"POU91-00534-Daan Banwa BRGY Hall IX", lrr:"10-00-05-DF", site:"Victorias", rfRegion:"AS923-3", lat:10.902959, lon:123.060219, type:'outdoor', env:'mixed', status:'active', rssi:'', notes:''},
+    {name:"POU91-00551-People's Hall Brgy XXI", lrr:"10-00-05-E0", site:"Victorias", rfRegion:"AS923-3", lat:10.912887, lon:123.085060, type:'outdoor', env:'mixed', status:'active', rssi:-44, notes:''},
+    {name:"POU91-00567-BRGY Hall X Estado", lrr:"10-00-05-CE", site:"Victorias", rfRegion:"AS923-3", lat:10.841177, lon:123.135231, type:'outdoor', env:'coastal', status:'active', rssi:-40, notes:'Elevated site, 146m ASL'},
+  ];
+  renderList('live'); renderMap('live'); save('live');
+}
+
+// ============ ACTILITY THINGPARK WIRELESS SYNC ============
+// OAuth2 client-credentials flow against the platform's Keycloak-style token
+// endpoint, then a paginated fetch of base stations (control-plane "bss" API):
+//   Token : POST https://{host}/users-auth/protocol/openid-connect/token
+//   List  : GET  https://{host}/thingpark/wireless/rest/partners/id:sup:packetworx-prod-ope-np/bss?language-tag=en-US&pageSize=100&sort=lastUpFrameDate,desc
+//   Detail: GET  https://{host}/thingpark/wireless/rest/partners/mine/bss/{uid}  (for GPS location)
+// Docs: https://docs.thingpark.com/thingpark-enterprise/latest/docs/api-subscriber/control-plane/quickstart
+const TPW_CREDS_KEY = 'tpw_creds_v1';
+const TPW_LAST_SYNC_KEY = 'tpw_last_sync_v1';
+
+function tpwUpdateLastSyncDisplay(){
+  const el = document.getElementById('tpw_lastSync');
+  if(!el) return;
+  const iso = localStorage.getItem(TPW_LAST_SYNC_KEY);
+  el.textContent = iso ? `Last synced: ${new Date(iso).toLocaleString()}` : 'Last synced: never';
+}
+
+function tpwLog(msg, append){
+  const el = document.getElementById('tpw_status');
+  if(append) el.textContent += '\n' + msg;
+  else el.textContent = msg;
+}
+
+function loadTpwCreds(){
+  try{
+    const raw = localStorage.getItem(TPW_CREDS_KEY);
+    if(!raw) return;
+    const c = JSON.parse(raw);
+    document.getElementById('tpw_host').value = c.host || '';
+    document.getElementById('tpw_clientid').value = c.clientId || '';
+    document.getElementById('tpw_clientsecret').value = c.clientSecret || '';
+    document.getElementById('tpw_remember').checked = true;
+  }catch(e){}
+}
+function saveTpwCreds(host, clientId, clientSecret, remember){
+  if(remember){
+    localStorage.setItem(TPW_CREDS_KEY, JSON.stringify({host, clientId, clientSecret}));
+  } else {
+    localStorage.removeItem(TPW_CREDS_KEY);
+  }
+}
+
+// The OAuth2 token endpoint path varies between ThingPark deployments —
+// SaaS platforms expose a shorthand "/users-auth/protocol/openid-connect/token"
+// path, but self-hosted / custom-branded ThingPark Enterprise instances run
+// their own Keycloak realm at "/auth/realms/{realm}/protocol/openid-connect/token"
+// instead, where {realm} is instance-specific. Rather than hardcode either
+// path, discover the real one via the standard OIDC discovery document —
+// this is a GET on a well-known path that both deployment styles expose.
+// ThingPark deployments can expose TWO separate Keycloak realms behind two
+// different path prefixes: "/users-auth/" for portal logins (human users),
+// and "/admins-auth/" for service accounts used by API integrations (what
+// this tool always authenticates as). They are NOT interchangeable — a
+// service account registered under admins-auth will get a generic
+// "invalid_client" error against users-auth no matter how correct its
+// credentials are, because Keycloak simply doesn't have that client in that
+// realm. Since this tool is always authenticating as a service account,
+// prefer admins-auth; fall back to users-auth for deployments that only
+// expose the one (e.g. some SaaS instances), then the hardcoded SaaS-docs
+// default as a last resort.
+async function tpwDiscoverAuthPrefix(baseUrl){
+  const OIDC_PREFIX_CANDIDATES = ['/admins-auth', '/users-auth'];
+  for(const prefix of OIDC_PREFIX_CANDIDATES){
+    try{
+      const res = await fetch(`${baseUrl}${prefix}/.well-known/openid-configuration`);
+      if(res.ok){
+        const config = await res.json();
+        // IMPORTANT: on self-hosted/reverse-proxied deployments, the
+        // "token_endpoint" published inside the discovery document often
+        // reflects Keycloak's *internal* URL (e.g. "/auth/realms/<realm>/
+        // protocol/openid-connect/token"), which is not the path the public
+        // reverse proxy actually routes -- calling it returns a 503 even
+        // though the discovery request itself succeeded. The prefix path
+        // itself (e.g. "/admins-auth/protocol/openid-connect/token") is what
+        // the proxy exposes externally and is what tools like Postman hit
+        // successfully. So: prefer the prefix-relative path, and keep the
+        // discovered token_endpoint only as a fallback in case some
+        // deployment needs it verbatim.
+        const directPath = `${prefix}/protocol/openid-connect/token`;
+        const discoveredPath = config.token_endpoint ? new URL(config.token_endpoint).pathname : null;
+        if(discoveredPath || true) return { prefix, tokenPath: directPath, fallbackTokenPath: discoveredPath };
+      }
+    }catch(e){ /* try next candidate */ }
+  }
+  return { prefix: null, tokenPath: '/users-auth/protocol/openid-connect/token', fallbackTokenPath: null }; // last-resort default
+}
+
+async function tpwDiscoverTokenPath(baseUrl){
+  const { tokenPath } = await tpwDiscoverAuthPrefix(baseUrl);
+  return tokenPath;
+}
+
+// Keycloak (and OIDC generally) supports two ways a confidential client can
+// authenticate at the token endpoint: "client_secret_post" (client_id and
+// client_secret as regular POST body fields, RFC 6749 §2.3.1) or
+// "client_secret_basic" (client_id:client_secret base64-encoded in an
+// Authorization: Basic header). Which one a given service account accepts
+// is a per-client Keycloak setting we can't see from here — try body-based
+// first (matches Actility's own docs) and fall back to Basic Auth on a 401
+// before giving up, rather than forcing the user to guess.
+async function tpwRequestToken(tokenUrl, clientId, clientSecret, useBasicAuth){
+  const body = new URLSearchParams();
+  body.set('grant_type', 'client_credentials');
+  const headers = { 'Content-Type': 'application/x-www-form-urlencoded' };
+  if(useBasicAuth){
+    headers['Authorization'] = 'Basic ' + btoa(`${clientId}:${clientSecret}`);
+  } else {
+    body.set('client_id', clientId);
+    body.set('client_secret', clientSecret);
+  }
+  return fetch(tokenUrl, { method: 'POST', headers, body: body.toString() });
+}
+
+// Keycloak's error responses are JSON with "error" (a machine-readable OAuth2
+// error code like invalid_client / unauthorized_client / invalid_grant) and
+// "error_description" (a human-readable explanation) — far more useful than
+// the bare HTTP status. Extract that instead of just reporting "401".
+async function tpwDescribeErrorResponse(res){
+  try{
+    const text = await res.text();
+    try{
+      const json = JSON.parse(text);
+      if(json.error || json.error_description){
+        return [json.error, json.error_description].filter(Boolean).join(': ');
+      }
+      return text.slice(0, 300);
+    }catch(e){
+      return text.slice(0, 300); // not JSON — show raw body (trimmed)
+    }
+  }catch(e){
+    return '(could not read response body)';
+  }
+}
+
+// Tries the given token path with both credential-passing styles
+// (body-based, then HTTP Basic as a fallback on 401). Returns the final
+// Response (which may still be a failure) plus which auth method was used.
+async function tpwTryTokenPath(tokenUrl, clientId, clientSecret){
+  let res, authMethodTried = 'client_secret_post (credentials in request body)';
+  try{
+    res = await tpwRequestToken(tokenUrl, clientId, clientSecret, false);
+  }catch(networkErr){
+    // A thrown fetch error (TypeError: Failed to fetch) means either a real
+    // network failure or a CORS block -- either way there's no Response to
+    // inspect, so surface it as a synthetic "failed" result the caller can
+    // treat the same way it treats a 5xx (i.e. worth trying the fallback path).
+    return { res: null, authMethodTried, networkError: networkErr };
+  }
+  if(res.status === 401){
+    try{
+      res = await tpwRequestToken(tokenUrl, clientId, clientSecret, true);
+      authMethodTried = 'client_secret_basic (HTTP Basic Auth header)';
+    }catch(networkErr){
+      return { res: null, authMethodTried, networkError: networkErr };
+    }
+  }
+  return { res, authMethodTried };
+}
+
+async function tpwGetToken(baseUrl, clientId, clientSecret){
+  const { prefix, tokenPath, fallbackTokenPath } = await tpwDiscoverAuthPrefix(baseUrl);
+  const tokenUrl = `${baseUrl}${tokenPath}`;
+
+  let { res, authMethodTried, networkError } = await tpwTryTokenPath(tokenUrl, clientId, clientSecret);
+  let pathTried = tokenPath;
+  const failed = () => !res || res.status >= 500;
+
+  // If the direct prefix path failed outright (thrown network/CORS error) or
+  // with a 5xx (server/proxy-side failure, not a credentials problem), and
+  // discovery turned up a different token_endpoint path, retry against that
+  // one before giving up.
+  if(failed() && fallbackTokenPath && fallbackTokenPath !== tokenPath){
+    const fallbackUrl = `${baseUrl}${fallbackTokenPath}`;
+    const retry = await tpwTryTokenPath(fallbackUrl, clientId, clientSecret);
+    const firstFailDesc = res ? `HTTP ${res.status}` : (networkError ? networkError.message : 'network error');
+    res = retry.res;
+    authMethodTried = retry.authMethodTried;
+    networkError = retry.networkError;
+    pathTried = `${tokenPath} (${firstFailDesc}), then ${fallbackTokenPath}`;
+  }
+
+  if(!res){
+    throw new Error(`Token request failed: ${networkError ? networkError.message : 'network error'} (tried ${pathTried}, last attempt used ${authMethodTried})\nThis usually means the request never reached the server -- a network/DNS issue, or the browser blocked the response because it lacked CORS headers (Access-Control-Allow-Origin). If your ThingPark deployment is self-hosted, ask whoever manages the reverse proxy in front of it to add CORS headers to the token endpoint, or use the included thingpark_cors_proxy.py as a local workaround.`);
+  }
+  if(!res.ok){
+    const detail = await tpwDescribeErrorResponse(res);
+    throw new Error(`Token request failed: HTTP ${res.status} ${res.statusText} (tried ${pathTried}, last attempt used ${authMethodTried})\nServer said: ${detail}`);
+  }
+  const data = await res.json();
+  if(!data.access_token) throw new Error('Token response had no access_token field.');
+  return data.access_token;
+}
+
+// Wraps fetch with a Bearer token, and on a 401 gets exactly one fresh token
+// (shared across concurrent callers via tokenState.refreshPromise) and
+// retries once. Needed because syncing 1000+ base stations can take long
+// enough that a short-lived OAuth token expires mid-sync.
+async function tpwAuthedFetch(url, tokenState, options){
+  options = options || {};
+  const headers = Object.assign({ 'Accept': 'application/json' }, options.headers || {}, {
+    'Authorization': `Bearer ${tokenState.token}`
+  });
+  let res = await fetch(url, Object.assign({}, options, { headers }));
+  if(res.status === 401){
+    if(!tokenState.refreshPromise){
+      tokenState.refreshPromise = tpwGetToken(tokenState.baseUrl, tokenState.clientId, tokenState.clientSecret)
+        .then(t => { tokenState.token = t; tokenState.refreshPromise = null; return t; })
+        .catch(e => { tokenState.refreshPromise = null; throw e; });
+    }
+    await tokenState.refreshPromise;
+    const retryHeaders = Object.assign({ 'Accept': 'application/json' }, options.headers || {}, {
+      'Authorization': `Bearer ${tokenState.token}`
+    });
+    res = await fetch(url, Object.assign({}, options, { headers: retryHeaders }));
+  }
+  return res;
+}
+
+async function tpwFetchAllBaseStations(tokenState, onProgress){
+  // This ThingPark deployment's partner-scoped bss endpoint hard-caps every
+  // response at 100 results and silently ignores every pagination param
+  // we've tried (pageSize, page, offset, skip, resultFrom) -- "more" is
+  // always true and "cursors" never appears, so real cursor pagination
+  // isn't available here (confirmed against a live account -- the account
+  // isn't associated to a subscriber/partner, which is what /mine/bss
+  // needs to resolve and support proper pagination; see IT note). Sorting
+  // by different fields (name/lastUpFrameDate/creationDate/version) each
+  // still cap at 100 and only got us to ~616 of ~1484 (see git history).
+  //
+  // Real fix found: this endpoint's `name` query param is an actual
+  // (case-sensitive, prefix-style) filter -- unlike `cnxState`/`state`,
+  // which are silently ignored -- and its `count` field reports the true
+  // total match count for that filter, not just the page size. That means
+  // we can partition the entire fleet by name prefix and harvest close to
+  // 100%, instead of only ever seeing the same capped page.
+  //
+  // Approach: recursively narrow a name-prefix filter until each branch's
+  // true count fits in a single 100-record page, using the sorted (asc)
+  // response's own first/last returned names to figure out which next
+  // character(s) to branch into -- no hardcoded assumption about this
+  // fleet's specific naming scheme (POU-, PICO-, FI81-, etc.), so it keeps
+  // working as gateways are added/renamed over time.
+  const seen = new Map();
+  let total = null;
+
+  // This endpoint appears to get flaky (intermittent HTTP 500s) under the
+  // sustained rapid-fire load a full recursive harvest generates -- a
+  // retry a few seconds later on the exact same query has been observed
+  // to succeed. Retry transient failures a couple of times with a short
+  // backoff before giving up on a given prefix, and never let one bad
+  // branch throw all the way up and abort the whole sync (that would
+  // silently under-report -- better to skip a handful of stations than
+  // lose the whole harvest to one flaky response).
+  async function queryPrefix(prefix, attempt){
+    attempt = attempt || 1;
+    const url = prefix
+      ? `${tokenState.baseUrl}/thingpark/wireless/rest/partners/id:sup:packetworx-prod-ope-np/bss?language-tag=en-US&sort=name,asc&name=${encodeURIComponent(prefix)}`
+      : `${tokenState.baseUrl}/thingpark/wireless/rest/partners/id:sup:packetworx-prod-ope-np/bss?language-tag=en-US&sort=name,asc`;
+    // IMPORTANT: everything here must be inside the try. A thrown network
+    // error (TypeError: Failed to fetch -- a dropped connection, a CORS
+    // hiccup, etc.) is a *different* failure mode than an HTTP error status,
+    // and was previously not caught here at all: it escaped this function,
+    // then harvest(), then the whole tpwFetchAllBaseStations() call, and
+    // landed in syncFromThingPark's outer catch -- aborting the entire sync
+    // (discarding every station already fetched) instead of just retrying
+    // this one prefix. Both failure modes now go through the same
+    // retry-with-backoff path.
+    const MAX_ATTEMPTS = 5;
+    try{
+      const res = await tpwAuthedFetch(url, tokenState);
+      if(!res.ok){
+        if(attempt < MAX_ATTEMPTS){
+          await new Promise(r => setTimeout(r, 400 * attempt));
+          return queryPrefix(prefix, attempt + 1);
+        }
+        return { count: 0, briefs: [] };
+      }
+      const data = await res.json();
+      if(data.count != null && !prefix) total = data.count;
+      return { count: data.count, briefs: data.briefs || [] };
+    }catch(e){
+      if(attempt < MAX_ATTEMPTS){
+        await new Promise(r => setTimeout(r, 400 * attempt));
+        return queryPrefix(prefix, attempt + 1);
+      }
+      // Persistent failure after retries -- treat as "nothing found here"
+      // rather than aborting the entire harvest over one bad branch.
+      return { count: 0, briefs: [] };
+    }
+  }
+
+  function addBriefs(briefs){
+    briefs.forEach(b => {
+      const key = b.lrrUUID || b.lrrID || b.name;
+      if(key && !seen.has(key)) seen.set(key, b);
+    });
+    if(onProgress) onProgress(seen.size, total);
+  }
+
+  // Returns the true count found under `prefix` so callers can tell when
+  // a branch is fully accounted for and stop scanning siblings early.
+  async function harvest(prefix){
+    const { count, briefs } = await queryPrefix(prefix);
+    if(count === 0 || briefs.length === 0) return 0;
+    if(count <= 100 || briefs.length < 100){
+      addBriefs(briefs);
+      return count;
+    }
+    // Still truncated at 100 with more truly matching -- narrow using the
+    // character right after our current prefix in the sorted first and
+    // last returned names.
+    const pos = prefix.length;
+    const first = briefs[0].name || '';
+    const last = briefs[briefs.length - 1].name || '';
+    if(pos >= first.length || pos >= last.length){
+      addBriefs(briefs); // can't narrow further -- take what we can get
+      return count;
+    }
+    // The observed first character is a trustworthy true minimum (the
+    // API sorts before truncating) but the observed LAST character is
+    // NOT a trustworthy maximum: if a single sub-bucket alone exceeds
+    // 100 rows, the entire capped page can share one character, hiding
+    // any siblings sorted after it completely (e.g. "PI8...", "PI9...",
+    // "PIC..." all fall under "PI", but if "PI8" alone has >100 rows the
+    // capped page never shows a "9" or "C" at all). So scan forward from
+    // the observed start up to a safe class ceiling, but track a running
+    // tally against the true `count` and stop as soon as everything is
+    // accounted for -- avoids blindly walking the full range every time.
+    //
+    // Only try characters actually used in this fleet's naming scheme
+    // (dash, digits, letters matching the observed case) -- a blind
+    // code-point range would also hit punctuation like '.' ':' '/' etc,
+    // which has been observed to trigger transient HTTP 500s from this
+    // API and is never a real gateway name character anyway.
+    const startCode = first.charCodeAt(pos);
+    const startCh = first[pos];
+    const isLower = startCh >= 'a' && startCh <= 'z';
+    const ceiling = isLower ? 'z'.charCodeAt(0) : 'Z'.charCodeAt(0);
+    const safeChars = isLower
+      ? '-0123456789abcdefghijklmnopqrstuvwxyz'
+      : '-0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+    let found = 0;
+    for(const ch of safeChars){
+      const code = ch.charCodeAt(0);
+      if(code < startCode || code > ceiling) continue;
+      if(found >= count) break;
+      found += await harvest(prefix + ch);
+    }
+    return found;
+  }
+
+  // Baseline unfiltered fetch (also gets the true grand total).
+  const rootResult = await queryPrefix('');
+  addBriefs(rootResult.briefs);
+
+  // The API's default sort appears case-insensitive, so a plain
+  // char-range walk from the root page's first/last name doesn't
+  // reliably cover both cases. Sweep the plausible top-level alphabet
+  // once (a fixed, bounded cost) and let harvest() recursively narrow
+  // each non-empty branch using the tally-based early exit above.
+  const rootChars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'.split('');
+  for(const ch of rootChars){
+    await harvest(ch);
+  }
+
+  return Array.from(seen.values());
+}
+
+// Base station detail resources vary by ThingPark version/vendor; probe a
+// handful of plausible shapes rather than assuming one exact schema.
+//
+// Sanity bounding box: this deployment is Philippines-only (Negros
+// Occidental / Victorias City area). Some gateway units were shipped and
+// never had their GPS configured on-site, so they still report the
+// manufacturer's factory-default location (confirmed live: exact 0,0
+// "Null Island", plus real-world coordinates landing in Taiwan, Singapore,
+// Paris, and Australia -- all vendor HQ/office locations, not real sites).
+// Treating those as "no GPS" instead of plotting them keeps the map's
+// auto-fit-bounds from zooming out to cover half of Asia and swallowing
+// the actual coverage heatmap.
+const TPW_VALID_LAT_RANGE = [4, 21];
+const TPW_VALID_LON_RANGE = [116, 127];
+function tpwIsPlausibleLatLon(lat, lon){
+  if(isNaN(lat) || isNaN(lon)) return false;
+  if(lat === 0 && lon === 0) return false; // Null Island sentinel
+  if(lat < TPW_VALID_LAT_RANGE[0] || lat > TPW_VALID_LAT_RANGE[1]) return false;
+  if(lon < TPW_VALID_LON_RANGE[0] || lon > TPW_VALID_LON_RANGE[1]) return false;
+  return true;
+}
+function tpwExtractLatLon(bs){
+  const paths = [
+    ['location', 'latitude', 'longitude'],
+    ['geolocation', 'latitude', 'longitude'],
+    ['gpsPosition', 'latitude', 'longitude'],
+    ['gps', 'latitude', 'longitude'],
+    ['position', 'lat', 'lon'],
+    ['position', 'latitude', 'longitude'],
+  ];
+  for(const [obj, latKey, lonKey] of paths){
+    const o = bs[obj];
+    if(o && o[latKey] != null && o[lonKey] != null){
+      const lat = parseFloat(o[latKey]), lon = parseFloat(o[lonKey]);
+      if(tpwIsPlausibleLatLon(lat, lon)) return {lat, lon};
+    }
+  }
+  if(bs.latitude != null && bs.longitude != null){
+    const lat = parseFloat(bs.latitude), lon = parseFloat(bs.longitude);
+    if(tpwIsPlausibleLatLon(lat, lon)) return {lat, lon};
+  }
+  if(bs.lat != null && bs.lon != null){
+    const lat = parseFloat(bs.lat), lon = parseFloat(bs.lon);
+    if(tpwIsPlausibleLatLon(lat, lon)) return {lat, lon};
+  }
+  return null;
+}
+
+// Backhaul info (Gateway ID / ICCID). Confirmed against a live ThingPark
+// detail response: network interfaces (cellular/ethernet/etc.) live under
+// bs.ints.int[] as a flat array, each with its own iccid/imei/imsi fields
+// (null when that interface isn't cellular or has no SIM). Gateway ID is
+// just the LRR ID already used elsewhere in the app.
+function tpwExtractBackhaul(bs){
+  if(!bs) return {gatewayId:'', iccid:''};
+  const ifaces = (bs.ints && bs.ints.int) || [];
+  let iccid = '';
+  for(const iface of ifaces){
+    if(iface && iface.iccid){ iccid = String(iface.iccid); break; }
+  }
+  return { gatewayId: bs.lrrID ? String(bs.lrrID) : '', iccid };
+}
+
+// ThingPark's `state` field is the base station's overall health/lifecycle
+// state (ACTIVE/INITIALIZATION/etc.) and is essentially always "ACTIVE" once
+// a BS has ever connected -- it does NOT reflect whether the gateway is
+// online right now. The field that actually tracks live online/offline
+// status is `cnxState` ("Network Connection" in Actility's own UI): CNX =
+// connected, DISC = disconnected. Confirmed against live data where `state`
+// was uniformly ACTIVE while `cnxState` varied CNX/DISC as expected.
+function tpwMapStatus(cnxState){
+  const s = (cnxState || '').toUpperCase();
+  if(s === 'CNX' || s.includes('CONNECT')) return 'active';
+  if(s === 'DISC' || s.includes('DISCONNECT') || s.includes('DOWN')) return 'inactive';
+  return 'unknown';
+}
+
+// Actility's "Location mode" attribute. The first pass at this (locationType
+// 0 = Manual/indoor, 1 or 2 = GNSS/outdoor) turned out to be wrong -- checked
+// against ~170 live records grouped by the raw locationType value:
+//   locationType 2 -> gpsReceiverConfig PRESENT for 100% of records, and a
+//     real (non-null) lat/lon for 100%. These are genuine "Onboard GNSS
+//     position" units -- e.g. "POU91-00123-BRGY Hall VIII L" (pole-mounted
+//     outdoor units with a working GPS fix).
+//   locationType 1 -> gpsReceiverConfig ABSENT for 100% of records, but
+//     STILL has a real lat/lon for 100% (a person typed it in). This is
+//     "Manual" mode, and in this fleet it's used for indoor femtocells --
+//     e.g. "IDU00918- 14th Floor B1 AHU Left Wing" ("IDU" = Indoor Unit).
+//   locationType 0 -> mixed gpsReceiverConfig, but 0% have any lat/lon at
+//     all. These are indoor femtocells (e.g. "FI81-00016-...Server Room")
+//     that have never actually gotten/been given a location.
+// So only locationType === 2 is a confirmed outdoor/GNSS unit. Everything
+// else (1 = Manual, 0 = never located, or missing) is indoor per the agreed
+// convention: manual location mode = indoor, only outdoor if Location mode
+// is Onboard GNSS Position.
+function tpwGuessType(bs){
+  if(bs && bs.locationType === 2) return 'outdoor';
+  return 'indoor';
+}
+
+// RF Region is a documented base station attribute (LoRaWAN regional
+// parameters / channel plan, e.g. "AS923-3", "EU868"), but its exact JSON
+// shape on the detail resource isn't confirmed from Actility's public docs —
+// probe several plausible shapes, same approach as tpwExtractLatLon.
+function tpwExtractRfRegion(bs){
+  if(!bs) return '';
+  const candidates = [
+    bs.rfRegion && (bs.rfRegion.commercialName || bs.rfRegion.name || bs.rfRegion.ID),
+    bs.rfRegionID,
+    bs.rfregion,
+    typeof bs.rfRegion === 'string' ? bs.rfRegion : null,
+  ];
+  for(const c of candidates){ if(c) return String(c); }
+  return '';
+}
+
+// Last-uplink timestamp -- `lastUpFrameDate` is confirmed to exist on the
+// base station resource (it's the field the list API itself sorts on, see
+// `sort=lastUpFrameDate,desc` in tpwFetchAllBaseStations below), which makes
+// it the most reliable "when did we last actually hear from this gateway"
+// signal -- more useful for NOC triage than `cnxState` alone, since a
+// gateway can report CNX (control-plane connected) while sending no uplinks.
+// The other field names are unconfirmed fallbacks in case a given deployment
+// exposes it differently, following the same probing approach as RF Region.
+function tpwExtractLastSeen(bs){
+  if(!bs) return '';
+  const candidates = [
+    bs.lastUpFrameDate, bs.lastUpFrameTime, bs.lastUplinkDate,
+    bs.lastUplinkTime, bs.lastUpDate, bs.lastSeenDate, bs.lastSeen
+  ];
+  for(const c of candidates){
+    if(!c) continue;
+    const d = new Date(c);
+    if(!isNaN(d.getTime())) return d.toISOString();
+  }
+  return '';
+}
+
+// Runs `worker` over `items` with at most `limit` in flight at once. Needed
+// because Actility's base station detail endpoint only exposes GPS location
+// on the per-station resource, not the list/brief — for fleets in the
+// thousands, fetching those one at a time (sequentially) can take many
+// minutes. Concurrency (most browsers happily run 15-20+ parallel requests
+// over HTTP/2 to the same host) cuts that down to roughly total/limit.
+async function tpwMapWithConcurrency(items, limit, worker){
+  const results = new Array(items.length);
+  let nextIndex = 0;
+  async function runner(){
+    while(true){
+      const i = nextIndex++;
+      if(i >= items.length) return;
+      results[i] = await worker(items[i], i);
+    }
+  }
+  const runners = [];
+  for(let r = 0; r < Math.min(limit, items.length); r++) runners.push(runner());
+  await Promise.all(runners);
+  return results;
+}
+
+const TPW_DETAIL_CONCURRENCY = 16;
+
+async function syncFromThingPark(){
+  const hostRaw = document.getElementById('tpw_host').value.trim();
+  const clientId = document.getElementById('tpw_clientid').value.trim();
+  const clientSecret = document.getElementById('tpw_clientsecret').value.trim();
+  const remember = document.getElementById('tpw_remember').checked;
+  const btn = document.getElementById('tpw_syncBtn');
+
+  if(!hostRaw || !clientId || !clientSecret){
+    tpwLog('Please fill in platform hostname, client ID, and client secret.');
+    return;
+  }
+  const baseUrl = hostRaw.startsWith('http') ? hostRaw.replace(/\/$/, '') : `https://${hostRaw.replace(/\/$/, '')}`;
+
+  saveTpwCreds(hostRaw, clientId, clientSecret, remember);
+
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  btn.textContent = '⏳ Connecting…';
+  tpwLog('Requesting access token…');
+
+  const tokenState = { baseUrl, clientId, clientSecret, token: null, refreshPromise: null };
+
+  try{
+    tokenState.token = await tpwGetToken(baseUrl, clientId, clientSecret);
+    tpwLog('Token acquired. Fetching base station list…');
+
+    const briefs = await tpwFetchAllBaseStations(tokenState, (soFar, total) => {
+      btn.textContent = `⏳ Listing… ${soFar}${total ? '/' + total : ''}`;
+      tpwLog(`Fetched ${soFar}${total ? ' of ' + total : ''} base stations so far…`);
+    });
+
+    if(briefs.length === 0){
+      tpwLog('Connected successfully, but ThingPark returned zero base stations for this service account.', true);
+      return;
+    }
+
+    tpwLog(`Got ${briefs.length} base stations. Fetching GPS/status detail (up to ${TPW_DETAIL_CONCURRENCY} at a time)…`, true);
+
+    let completed = 0;
+    let lastUiUpdate = 0;
+    const entries = await tpwMapWithConcurrency(briefs, TPW_DETAIL_CONCURRENCY, async (brief) => {
+      let detail = brief;
+      if(brief.href){
+        try{
+          const detailRes = await tpwAuthedFetch(`${baseUrl}${brief.href}`, tokenState);
+          if(detailRes.ok) detail = await detailRes.json();
+        }catch(e){ /* fall back to brief-only data below */ }
+      }
+
+      completed++;
+      const now = Date.now();
+      if(now - lastUiUpdate > 250 || completed === briefs.length){
+        lastUiUpdate = now;
+        btn.textContent = `⏳ Syncing ${completed}/${briefs.length}…`;
+      }
+
+      const latlon = tpwExtractLatLon(detail) || tpwExtractLatLon(brief);
+      const name = detail.name || brief.name || (brief.lrrID ? `BS ${brief.lrrID}` : 'Unnamed base station');
+      if(!name) return null;
+
+      const tagSource = (detail.tags && detail.tags.length ? detail.tags : brief.tags) || [];
+      const tags = tagSource.map(t => (t && t.name) ? String(t.name) : String(t)).filter(Boolean);
+
+      return {
+        name,
+        lrr: brief.lrrID || detail.lrrID || '',
+        site: '',
+        rfRegion: tpwExtractRfRegion(detail) || tpwExtractRfRegion(brief),
+        lat: latlon ? latlon.lat.toFixed(6) : '',
+        lon: latlon ? latlon.lon.toFixed(6) : '',
+        type: tpwGuessType(detail),
+        env: 'mixed',
+        status: tpwMapStatus(detail.cnxState || brief.cnxState),
+        lastSeen: tpwExtractLastSeen(detail) || tpwExtractLastSeen(brief),
+        rssi: '',
+        tags,
+        noGps: !latlon,
+        gatewayId: tpwExtractBackhaul(detail).gatewayId || tpwExtractBackhaul(brief).gatewayId,
+        iccid: tpwExtractBackhaul(detail).iccid || tpwExtractBackhaul(brief).iccid,
+        notes: `Synced from ThingPark Wireless on ${new Date().toISOString().slice(0,10)}${brief.lrrUUID ? '. LRR UUID: ' + brief.lrrUUID : ''}`
+      };
+    });
+
+    tpwLog('Merging into gateway list…', true);
+
+    // Build an LRR→index lookup once instead of scanning the whole array
+    // per gateway (O(n) merge instead of O(n²) for large fleets).
+    const lrrIndex = new Map();
+    state.live.gateways.forEach((g, i) => { if(g.lrr) lrrIndex.set(g.lrr.toLowerCase(), i); });
+
+    let added = 0, updated = 0, noGps = 0, errors = 0;
+    for(const entry of entries){
+      if(!entry){ errors++; continue; }
+      if(entry.noGps) noGps++;
+      const key = entry.lrr ? entry.lrr.toLowerCase() : null;
+      const idx = key ? lrrIndex.get(key) : undefined;
+      delete entry.noGps;
+      if(idx !== undefined){
+        const existing = state.live.gateways[idx];
+        const prevStatus = existing.status;
+        state.live.gateways[idx] = { ...entry, env: existing.env || 'mixed', rssi: existing.rssi, site: existing.site || entry.site };
+        recordStatusChange(state.live.gateways[idx], prevStatus, entry.status);
+        updated++;
+      } else {
+        state.live.gateways.push(entry);
+        if(key) lrrIndex.set(key, state.live.gateways.length - 1);
+        added++;
+      }
+    }
+
+    renderList('live'); renderMap('live'); save('live');
+    localStorage.setItem(TPW_LAST_SYNC_KEY, new Date().toISOString());
+    tpwUpdateLastSyncDisplay();
+    updateSyncAgeIndicator();
+    flushNocInactiveBatch();
+    checkDiagnosisAlerts();
+    tpwLog(`Sync complete: ${added} added, ${updated} updated, ${noGps} missing GPS (added without a map pin), ${errors} skipped.`, true);
+  }catch(err){
+    const corsHint = /Failed to fetch|NetworkError|TypeError/.test(err.message) || err instanceof TypeError;
+    tpwLog(`Sync failed: ${err.message}${corsHint ? '\n\nThis looks like it could be a CORS/network block rather than a credentials problem — see the CORS note above.' : ''}`, true);
+  }finally{
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+  }
+}
+
+
+// ============ CONSOLE CONNECT IOT -- SIM STATUS ============
+// Cross-references each gateway's ICCID (set manually, or pulled in
+// automatically by the ThingPark backhaul sync above) against Console
+// Connect by PCCW Global's IoT SIM management platform, so a SIM's live
+// state can be combined with the gateway's own online/offline state into
+// the Gateway + SIM cross-check diagnosis below.
+//
+// IMPORTANT -- this is a scaffold, not a confirmed integration. PCCW Global
+// does not publish the Console Connect IoT REST API publicly; it's provided
+// to customers on request, and the exact base URL / auth style / response
+// shape vary per deployment. ccLookupIccid() below targets a best-guess
+// REST shape -- GET {baseUrl}/iot/v1/subscriptions?iccid={id} -- and
+// ccExtractSimFields() probes several plausible field names in the
+// response, the same defensive-probing approach used for the ThingPark
+// integration above. Confirm the real endpoint/response shape with PCCW
+// Global once available and adjust those two functions -- everything
+// downstream (diagnosis, badges, filters, CSV import) already works off
+// the normalized {status, imsi, msisdn, label, pkg, dataMB} shape they
+// produce, so nothing else needs to change.
+//
+// Until real API access is confirmed, "Import Subscriptions CSV" works
+// today with no credentials -- it reads the exact export format Console
+// Connect's own portal produces (confirmed against a real exported file:
+// IMSI, Label, ICCID, MSISDN, Detected IMEI, Assigned IMEI, Subscription
+// package ID, Subscription package description, Specification ID, State,
+// State lock, State lock description, Enterprise, First activation date,
+// PBR exit date, Fixed/Subnet IPv4/IPv6, Monthly data, Monthly SMS, Label#)
+// and matches rows to gateways by ICCID.
+const CC_CREDS_KEY = 'cc_creds_v1';
+const CC_LAST_SYNC_KEY = 'cc_last_sync_v1';
+const CC_SPIKE_KEY = 'cc_spike_threshold_mb_v1';
+
+function ccLog(msg, append){
+  const el = document.getElementById('cc_status');
+  if(!el) return;
+  if(append) el.textContent += '\n' + msg;
+  else el.textContent = msg;
+}
+function ccUpdateLastSyncDisplay(){
+  const el = document.getElementById('cc_lastSync');
+  if(!el) return;
+  const iso = localStorage.getItem(CC_LAST_SYNC_KEY);
+  el.textContent = iso ? `Last synced: ${new Date(iso).toLocaleString()}` : 'Last synced: never';
+}
+function loadCcCreds(){
+  try{
+    const thresh = localStorage.getItem(CC_SPIKE_KEY);
+    if(thresh !== null) document.getElementById('cc_spike_threshold').value = thresh;
+    const raw = localStorage.getItem(CC_CREDS_KEY);
+    if(!raw) return;
+    const c = JSON.parse(raw);
+    document.getElementById('cc_host').value = c.host || '';
+    document.getElementById('cc_apikey').value = c.apiKey || '';
+    document.getElementById('cc_authstyle').value = c.authStyle || 'bearer';
+    document.getElementById('cc_remember').checked = true;
+  }catch(e){}
+}
+function saveCcCreds(host, apiKey, authStyle, remember){
+  if(remember){
+    localStorage.setItem(CC_CREDS_KEY, JSON.stringify({host, apiKey, authStyle}));
+  } else {
+    localStorage.removeItem(CC_CREDS_KEY);
+  }
+}
+function toggleCcSection(){
+  const body = document.getElementById('cc_section_body');
+  const btn = document.getElementById('cc_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+function ccSaveSpikeThreshold(){
+  const v = document.getElementById('cc_spike_threshold').value.trim();
+  if(v === '') localStorage.removeItem(CC_SPIKE_KEY);
+  else localStorage.setItem(CC_SPIKE_KEY, v);
+}
+function ccGetSpikeThreshold(){
+  const v = localStorage.getItem(CC_SPIKE_KEY);
+  const n = v !== null && v !== '' ? parseFloat(v) : NaN;
+  return isNaN(n) ? null : n;
+}
+
+// Normalizes a raw "state" string from either the API or the CSV export
+// (observed live values: "Active", "Paused") into the app's three-way
+// active/inactive/unknown model. Extra synonyms are included defensively
+// since the live API's exact vocabulary isn't confirmed.
+function ccMapSimState(raw){
+  const s = String(raw || '').trim().toUpperCase();
+  if(!s) return 'unknown';
+  if(s === 'ACTIVE') return 'active';
+  if(['PAUSED','SUSPENDED','INACTIVE','TERMINATED','DEACTIVATED','DISABLED','BLOCKED'].includes(s)) return 'inactive';
+  return 'unknown';
+}
+
+// Probes several plausible response shapes for a SIM/subscription lookup --
+// unconfirmed against a live Console Connect response (see caveat above).
+function ccExtractSimFields(json){
+  if(!json) return null;
+  const rec = json.data || json.subscription || json.result || json;
+  const stateRaw = rec.state ?? rec.status ?? rec.subscriptionState ?? rec.simState ?? rec.State;
+  const imsi = rec.imsi ?? rec.IMSI ?? '';
+  const msisdn = rec.msisdn ?? rec.MSISDN ?? '';
+  const label = rec.label ?? rec.name ?? rec.Label ?? '';
+  const pkg = rec.subscriptionPackageDescription ?? rec.packageDescription ?? rec.package ?? '';
+  const dataMB = rec.monthlyDataMB ?? rec.monthlyData ?? rec.dataUsageMB ?? null;
+  return {
+    status: ccMapSimState(stateRaw),
+    imsi: imsi ? String(imsi) : '',
+    msisdn: msisdn ? String(msisdn) : '',
+    label: label ? String(label) : '',
+    pkg: pkg ? String(pkg) : '',
+    dataMB: (dataMB !== null && dataMB !== undefined && !isNaN(dataMB)) ? parseFloat(dataMB) : ''
+  };
+}
+
+// Actility/ThingPark sometimes reports the ICCID with a trailing letter
+// (commonly 'F') -- e.g. 8985200015505694992F -- which is a BCD padding
+// nibble left over from reading an odd-length 19-digit ICCID off the SIM's
+// EF_ICCID, not part of the real ICCID. Console Connect's own records use
+// the plain numeric ICCID without that padding, so cross-checking on the
+// raw value fails to match. Strip any trailing non-digit characters before
+// using an ICCID as a lookup/match key -- a real ICCID is digits only.
+function ccNormalizeIccid(iccid){
+  return String(iccid || '').trim().replace(/[^0-9]+$/, '');
+}
+
+async function ccLookupIccid(baseUrl, iccid, apiKey, authStyle){
+  const url = `${baseUrl}/iot/v1/subscriptions?iccid=${encodeURIComponent(iccid)}`;
+  const headers = { 'Accept': 'application/json' };
+  if(authStyle === 'apikey') headers['X-API-Key'] = apiKey;
+  else headers['Authorization'] = `Bearer ${apiKey}`;
+  const res = await fetch(url, { headers });
+  if(!res.ok){
+    let detail = '';
+    try{ detail = (await res.text()).slice(0, 200); }catch(e){}
+    throw new Error(`HTTP ${res.status}${detail ? ' -- ' + detail : ''}`);
+  }
+  const json = await res.json();
+  const fields = ccExtractSimFields(json);
+  if(!fields) throw new Error('Empty response');
+  return fields;
+}
+
+async function syncFromConsoleConnect(){
+  const hostRaw = document.getElementById('cc_host').value.trim();
+  const apiKey = document.getElementById('cc_apikey').value.trim();
+  const authStyle = document.getElementById('cc_authstyle').value;
+  const remember = document.getElementById('cc_remember').checked;
+  const btn = document.getElementById('cc_syncBtn');
+
+  if(!hostRaw || !apiKey){
+    ccLog("Please fill in the base URL and API key. If you don't have API access yet, use \"Import Subscriptions CSV\" instead.");
+    return;
+  }
+  const baseUrl = hostRaw.startsWith('http') ? hostRaw.replace(/\/$/, '') : `https://${hostRaw.replace(/\/$/, '')}`;
+  saveCcCreds(hostRaw, apiKey, authStyle, remember);
+
+  const targets = state.live.gateways.filter(g => ccNormalizeIccid(g.iccid) !== '');
+  if(targets.length === 0){
+    ccLog('No gateways have an ICCID set yet. Add one manually (Add/Edit form) or sync gateways from ThingPark first, which pulls ICCID automatically where available.');
+    return;
+  }
+
+  btn.disabled = true;
+  const originalLabel = btn.textContent;
+  ccLog(`Checking ${targets.length} SIM(s) against Console Connect...`);
+
+  let ok = 0, failed = 0, completed = 0;
+  await tpwMapWithConcurrency(targets, 6, async (gw) => {
+    try{
+      const fields = await ccLookupIccid(baseUrl, ccNormalizeIccid(gw.iccid), apiKey, authStyle);
+      gw.simStatus = fields.status;
+      gw.simImsi = fields.imsi;
+      gw.simMsisdn = fields.msisdn;
+      gw.simLabel = fields.label;
+      gw.simPackage = fields.pkg;
+      gw.simMonthlyDataMB = fields.dataMB;
+      gw.simLastChecked = new Date().toISOString();
+      gw.simSource = 'api';
+      ok++;
+    }catch(err){
+      failed++;
+      ccLog(`  ${gw.name}: ${err.message}`, true);
+    }
+    completed++;
+    btn.textContent = `\u23F3 Checking ${completed}/${targets.length}...`;
+  });
+
+  renderList('live'); renderMap('live'); save('live');
+  localStorage.setItem(CC_LAST_SYNC_KEY, new Date().toISOString());
+  ccUpdateLastSyncDisplay();
+  checkDiagnosisAlerts();
+  ccLog(`Done: ${ok} checked, ${failed} failed.${failed > 0 ? ' If every lookup failed, the placeholder endpoint/response shape almost certainly needs adjusting to match your actual Console Connect API -- see the caveat above.' : ''}`, true);
+  btn.disabled = false;
+  btn.textContent = originalLabel;
+}
+
+// ---- CSV fallback: works today without any API access.
+function importSubscriptionsCSV(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const rows = parseCSV(evt.target.result);
+    if(rows.length < 2){ alert('CSV appears empty.'); return; }
+    const header = rows[0].map(h => h.toLowerCase().trim());
+    const col = (name) => header.indexOf(name.toLowerCase());
+    const iccidCol = col('iccid');
+    if(iccidCol === -1){ alert('This CSV has no ICCID column -- is it a Console Connect subscriptions export?'); return; }
+
+    const byIccid = new Map();
+    for(let ri=1; ri<rows.length; ri++){
+      const r = rows[ri];
+      if(!r || r.length === 0 || r.every(v => !v)) continue;
+      const iccid = ccNormalizeIccid(r[iccidCol]);
+      if(!iccid) continue;
+      byIccid.set(iccid, {
+        imsi: r[col('imsi')] || '',
+        label: r[col('label')] || '',
+        msisdn: r[col('msisdn')] || '',
+        pkg: r[col('subscription package description')] || '',
+        state: r[col('state')] || '',
+        enterprise: r[col('enterprise')] || '',
+        monthlyData: r[col('monthly data')] || ''
+      });
+    }
+
+    let matched = 0, unmatched = 0;
+    state.live.gateways.forEach(g => {
+      const gIccid = ccNormalizeIccid(g.iccid);
+      if(!gIccid) return;
+      const rec = byIccid.get(gIccid);
+      if(!rec){ unmatched++; return; }
+      g.simStatus = ccMapSimState(rec.state);
+      g.simImsi = rec.imsi;
+      g.simMsisdn = rec.msisdn;
+      g.simLabel = rec.label;
+      g.simPackage = rec.pkg;
+      g.simMonthlyDataMB = rec.monthlyData !== '' && !isNaN(rec.monthlyData) ? parseFloat(rec.monthlyData) : '';
+      g.simLastChecked = new Date().toISOString();
+      g.simSource = 'csv';
+      matched++;
+    });
+
+    renderList('live'); renderMap('live'); save('live');
+    localStorage.setItem(CC_LAST_SYNC_KEY, new Date().toISOString());
+    ccUpdateLastSyncDisplay();
+    checkDiagnosisAlerts();
+    ccLog(`CSV import complete: ${matched} gateway(s) matched to a SIM by ICCID, ${unmatched} gateway(s) had an ICCID with no matching row in this file. (${byIccid.size} SIM records read from CSV.)`);
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+// ============ GATEWAY + SIM CROSS-CHECK DIAGNOSIS ============
+// Combines the gateway's own connection state (from ThingPark's cnxState,
+// mapped to active/inactive/unknown) with the SIM's state (from Console
+// Connect, via API or CSV import above) into a single diagnosis:
+//   Gateway offline + SIM active   -> Backhaul / Device Fault
+//   Gateway offline + SIM inactive -> Connectivity / Billing Issue
+//   Gateway online  + data spike   -> Traffic Anomaly Alert (only fires if
+//     a spike threshold is configured -- a single usage reading has no
+//     baseline to compare against, so without an explicit threshold this
+//     would just be guessing).
+function computeDiagnosis(gw){
+  if(!gw || !gw.simStatus) return null;
+  const gwOffline = gw.status === 'inactive';
+  const gwOnline = gw.status === 'active';
+  const simActive = gw.simStatus === 'active';
+  const simDown = gw.simStatus === 'inactive';
+  if(gwOffline && simActive){
+    return { code:'backhaul', label:'Backhaul / Device Fault', color:'danger',
+      detail:'SIM is live but the gateway is not responding. Check power, ethernet/VPN tunnel, or gateway hardware failure.' };
+  }
+  if(gwOffline && simDown){
+    return { code:'billing', label:'Connectivity / Billing Issue', color:'danger',
+      detail:'Both offline. Check SIM status in Console Connect, APN config, billing, or carrier signal at site.' };
+  }
+  if(gwOnline && simActive){
+    const threshold = ccGetSpikeThreshold();
+    const usage = (gw.simMonthlyDataMB !== '' && gw.simMonthlyDataMB != null && !isNaN(gw.simMonthlyDataMB)) ? parseFloat(gw.simMonthlyDataMB) : null;
+    if(threshold != null && usage != null && usage > threshold){
+      return { code:'anomaly', label:'Traffic Anomaly Alert', color:'warn',
+        detail:`Gateway is up but data usage (${usage} MB) exceeds your ${threshold} MB threshold. Possible rogue device or APN misconfiguration -- verify against actual usage trend before acting.` };
+    }
+  }
+  return null;
+}
+function toggleDiagFilter(tab){
+  state[tab].activeDiagFilter = !state[tab].activeDiagFilter;
+  renderList(tab); renderMap(tab);
+}
+
+// ============ FLOOR PLAN WORKSPACE (Planning tab sub-mode) ============
+// Wall material attenuation (ITU indoor default estimates, dB per wall crossing)
+const WALL_ATTEN = { concrete: 12, drywall: 3, glass: 2, metal: 26 };
+const WALL_LABEL = { concrete: 'Concrete (~12dB)', drywall: 'Drywall (~3dB)', glass: 'Glass (~2dB)', metal: 'Metal (~26dB)' };
+
+const fpState = {
+  imageUrl: null,
+  imageWidth: 0,
+  imageHeight: 0,
+  // Scale: metersPerPixel — set via calibration
+  metersPerPixel: null,
+  gateways: [],   // {id, name, x, y, env}
+  walls: [],      // {id, points:[[x,y],...], material}
+  // Interaction mode: 'view' | 'place' | 'wall' | 'calibrate'
+  mode: 'view',
+  // Calibration in progress
+  calPoints: [],
+  // Wall in progress
+  wallPoints: [],
+  storageKey: 'planning_floorplan_v1'
+};
+
+function switchSubmode(sub){
+  document.querySelectorAll('.submode-tab').forEach(t => t.classList.toggle('active', t.dataset.submode === sub));
+  document.getElementById('planning_outdoor_content').style.display = sub === 'outdoor' ? '' : 'none';
+  document.getElementById('planning_floorplan_content').style.display = sub === 'floorplan' ? '' : 'none';
+  document.getElementById('planning_map_wrap').style.display = sub === 'outdoor' ? '' : 'none';
+  document.getElementById('planning_fp_wrap').style.display = sub === 'floorplan' ? 'flex' : 'none';
+  if(sub === 'outdoor'){
+    setTimeout(() => { if(state.planning.map) state.planning.map.invalidateSize(); }, 50);
+  } else {
+    renderFloorPlan();
+  }
+}
+
+function handleFpUpload(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    const img = new Image();
+    img.onload = () => {
+      fpState.imageUrl = evt.target.result;
+      fpState.imageWidth = img.naturalWidth;
+      fpState.imageHeight = img.naturalHeight;
+      fpState.metersPerPixel = null;
+      fpState.gateways = [];
+      fpState.walls = [];
+      document.getElementById('fp_calBtn').disabled = false;
+      document.getElementById('fp_placeBtn').disabled = false;
+      document.getElementById('fp_wallBtn').disabled = false;
+      saveFloorPlan();
+      renderFloorPlan();
+    };
+    img.src = evt.target.result;
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
+}
+
+function renderFloorPlan(){
+  const empty = document.getElementById('fp_empty');
+  const canvas = document.getElementById('fp_canvas');
+  const toolbar = document.getElementById('fp_toolbar');
+  const watermark = document.getElementById('fp_watermark');
+  const scaleInfo = document.getElementById('fp_scale_info');
+
+  if(!fpState.imageUrl){
+    empty.style.display = '';
+    canvas.style.display = 'none';
+    toolbar.style.display = 'none';
+    watermark.style.display = 'none';
+    scaleInfo.style.display = 'none';
+    document.getElementById('fp_scale_status').textContent = 'No floor plan loaded yet.';
+    renderFpList();
+    return;
+  }
+
+  empty.style.display = 'none';
+  canvas.style.display = 'block';
+  toolbar.style.display = 'flex';
+  watermark.style.display = 'block';
+  scaleInfo.style.display = 'block';
+
+  const img = document.getElementById('fp_img');
+  img.src = fpState.imageUrl;
+  // Fit canvas to image aspect ratio
+  const wrap = document.getElementById('planning_fp_wrap');
+  const maxW = wrap.clientWidth - 40, maxH = wrap.clientHeight - 40;
+  const ratio = fpState.imageWidth / fpState.imageHeight;
+  let w = maxW, h = maxW / ratio;
+  if(h > maxH){ h = maxH; w = h * ratio; }
+  canvas.style.width = w + 'px';
+  canvas.style.height = h + 'px';
+
+  const svg = document.getElementById('fp_svg');
+  svg.setAttribute('viewBox', `0 0 ${fpState.imageWidth} ${fpState.imageHeight}`);
+  svg.setAttribute('preserveAspectRatio', 'xMidYMid meet');
+  svg.innerHTML = '';
+
+  // Update scale display
+  if(fpState.metersPerPixel){
+    scaleInfo.textContent = `Scale: 1 px = ${fpState.metersPerPixel.toFixed(3)} m  |  Image: ${fpState.imageWidth}×${fpState.imageHeight}px = ${(fpState.imageWidth*fpState.metersPerPixel).toFixed(1)}×${(fpState.imageHeight*fpState.metersPerPixel).toFixed(1)}m`;
+    document.getElementById('fp_scale_status').innerHTML = `<b style="color:var(--conf-hi);">Calibrated:</b> 1px = ${fpState.metersPerPixel.toFixed(3)}m`;
+  } else {
+    scaleInfo.textContent = 'Scale: not calibrated — coverage bands won\'t render until scale is set';
+    document.getElementById('fp_scale_status').innerHTML = '<b style="color:var(--warn);">Not calibrated yet.</b> Click Calibrate scale, then click two points on the plan with a known distance between them.';
+  }
+
+  // ---- Draw walls ----
+  fpState.walls.forEach(w => {
+    if(w.points.length < 2) return;
+    const path = w.points.map((p,i) => (i===0?'M':'L')+p[0]+' '+p[1]).join(' ');
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    el.setAttribute('d', path);
+    el.setAttribute('class', `fp-wall ${w.material}`);
+    el.classList.add('interactive');
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(confirm(`Delete this ${WALL_LABEL[w.material]} wall?`)){
+        fpState.walls = fpState.walls.filter(x => x.id !== w.id);
+        saveFloorPlan(); renderFloorPlan();
+      }
+    });
+    svg.appendChild(el);
+  });
+
+  // ---- Draw coverage bands per gateway (if calibrated) ----
+  if(fpState.metersPerPixel){
+    fpState.gateways.forEach(gw => drawFpCoverage(svg, gw));
+  }
+
+  // ---- Draw gateways ----
+  fpState.gateways.forEach(gw => {
+    const marker = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+    marker.setAttribute('cx', gw.x);
+    marker.setAttribute('cy', gw.y);
+    marker.setAttribute('r', Math.max(8, fpState.imageWidth / 80));
+    marker.setAttribute('class', 'fp-gw-marker indoor interactive');
+    marker.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if(confirm(`Delete gateway "${gw.name}"?`)){
+        fpState.gateways = fpState.gateways.filter(x => x.id !== gw.id);
+        saveFloorPlan(); renderFloorPlan();
+      }
+    });
+    svg.appendChild(marker);
+    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+    label.setAttribute('x', gw.x);
+    label.setAttribute('y', gw.y + 3);
+    label.setAttribute('class', 'fp-gw-label');
+    label.textContent = 'IN';
+    svg.appendChild(label);
+  });
+
+  // ---- Draw calibration points in progress ----
+  if(fpState.mode === 'calibrate' && fpState.calPoints.length > 0){
+    fpState.calPoints.forEach(p => {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]);
+      c.setAttribute('r', 6); c.setAttribute('class', 'fp-cal-marker');
+      svg.appendChild(c);
+    });
+    if(fpState.calPoints.length === 2){
+      const p1 = fpState.calPoints[0], p2 = fpState.calPoints[1];
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', p1[0]); line.setAttribute('y1', p1[1]);
+      line.setAttribute('x2', p2[0]); line.setAttribute('y2', p2[1]);
+      line.setAttribute('class', 'fp-cal-line');
+      svg.appendChild(line);
+    }
+  }
+
+  // ---- Draw wall in progress ----
+  if(fpState.mode === 'wall' && fpState.wallPoints.length > 0){
+    const path = fpState.wallPoints.map((p,i) => (i===0?'M':'L')+p[0]+' '+p[1]).join(' ');
+    const el = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    el.setAttribute('d', path); el.setAttribute('class', 'fp-wall-preview');
+    svg.appendChild(el);
+    fpState.wallPoints.forEach(p => {
+      const c = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      c.setAttribute('cx', p[0]); c.setAttribute('cy', p[1]);
+      c.setAttribute('r', 4); c.setAttribute('fill', '#c792ea');
+      svg.appendChild(c);
+    });
+  }
+
+  renderFpList();
+}
+
+// ---- Wall-aware coverage rendering ----
+// Draw ~20 concentric rings; for each pixel-radius, sample points around the circle and check
+// how many walls a ray from gateway to sample point crosses; sum the wall attenuation to get
+// adjusted RSSI at each point, then color that ring band accordingly.
+// For efficiency: pre-sample N angles around the circle, cast ray gateway→boundary, count wall crossings.
+function drawFpCoverage(svg, gw){
+  const N_ANGLES = 60;             // angular resolution
+  const N_RINGS = 22;
+  const maxRangeM = INDOOR.maxRange;
+  const maxRangePx = maxRangeM / fpState.metersPerPixel;
+  // Apply env adjustment
+  const envAdj = ENV_ADJ[gw.env || 'warehouse'] || 1.0;
+  const nExp = INDOOR.n * envAdj;
+
+  // Precompute wall segments once per gateway (for perf)
+  const wallSegments = [];
+  fpState.walls.forEach(w => {
+    for(let i=0; i<w.points.length-1; i++){
+      wallSegments.push({
+        x1: w.points[i][0], y1: w.points[i][1],
+        x2: w.points[i+1][0], y2: w.points[i+1][1],
+        atten: WALL_ATTEN[w.material] || 0
+      });
+    }
+  });
+
+  // For each angle, compute cumulative wall attenuation as function of distance
+  // We'll build a per-angle "wall crossings" list sorted by distance from gateway
+  const perAngle = [];
+  for(let ai = 0; ai < N_ANGLES; ai++){
+    const angle = (ai / N_ANGLES) * 2 * Math.PI;
+    const dx = Math.cos(angle), dy = Math.sin(angle);
+    // Ray from (gw.x, gw.y) direction (dx,dy), find intersections with each wall
+    const crossings = [];
+    for(const seg of wallSegments){
+      const t = raySegmentIntersect(gw.x, gw.y, dx, dy, seg.x1, seg.y1, seg.x2, seg.y2);
+      if(t !== null && t > 0 && t <= maxRangePx) crossings.push({dist: t, atten: seg.atten});
+    }
+    crossings.sort((a,b) => a.dist - b.dist);
+    perAngle.push(crossings);
+  }
+
+  // Build a polygon per ring band by walking angles and computing RSSI at that (angle, ring) sample.
+  // Draw as concentric bands where each band is one "annulus" made of triangles between angles.
+  const bands = []; // bands[ringIdx] = array of {x,y,color} points around the ring
+  for(let ri = N_RINGS; ri >= 1; ri--){
+    const rPx = (ri / N_RINGS) * maxRangePx;
+    const rM = rPx * fpState.metersPerPixel;
+    const points = [];
+    for(let ai = 0; ai < N_ANGLES; ai++){
+      const angle = (ai / N_ANGLES) * 2 * Math.PI;
+      const px = gw.x + rPx * Math.cos(angle);
+      const py = gw.y + rPx * Math.sin(angle);
+      // Sum wall attenuation up to this distance
+      let wallLoss = 0;
+      for(const c of perAngle[ai]){
+        if(c.dist <= rPx) wallLoss += c.atten; else break;
+      }
+      // RSSI = EIRP - pathLoss - wallLoss
+      const dM_eff = Math.max(rM, D0_M);
+      const pathLoss = PL_D0 + 10 * nExp * Math.log10(dM_eff / D0_M);
+      const rssi = EIRP_DBM - pathLoss - wallLoss;
+      const color = rssiColor(rssi);
+      points.push({x: px, y: py, color: color});
+    }
+    bands.push(points);
+  }
+
+  // Draw each band as radial "wedges" from angle to angle+1, using the outer color
+  // Slightly simplified: draw filled polygons per ring where color is uniform enough,
+  // else per-wedge fill.
+  // Actually simplest & correct: draw one wedge (triangle strip) per (angle, ring) pair.
+  for(let ri = 0; ri < N_RINGS; ri++){
+    const outer = bands[ri]; // outer edge of ring
+    const inner = ri < N_RINGS - 1 ? bands[ri+1] : null; // inner edge (smaller radius)
+    for(let ai = 0; ai < N_ANGLES; ai++){
+      const nextAi = (ai + 1) % N_ANGLES;
+      const color = outer[ai].color;
+      if(!color) continue;
+      // Build quadrilateral: outer[ai] -> outer[nextAi] -> inner[nextAi] -> inner[ai]
+      // If inner is null (innermost ring), collapse to triangle at gateway center
+      const p1 = outer[ai];
+      const p2 = outer[nextAi];
+      let ptsAttr;
+      if(inner){
+        const p3 = inner[nextAi];
+        const p4 = inner[ai];
+        ptsAttr = `${p1.x},${p1.y} ${p2.x},${p2.y} ${p3.x},${p3.y} ${p4.x},${p4.y}`;
+      } else {
+        ptsAttr = `${p1.x},${p1.y} ${p2.x},${p2.y} ${gw.x},${gw.y}`;
+      }
+      const poly = document.createElementNS('http://www.w3.org/2000/svg', 'polygon');
+      poly.setAttribute('points', ptsAttr);
+      poly.setAttribute('fill', color);
+      poly.setAttribute('class', 'fp-coverage-band');
+      svg.appendChild(poly);
+    }
+  }
+
+  // Ceiling boundary
+  const boundary = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+  boundary.setAttribute('cx', gw.x); boundary.setAttribute('cy', gw.y);
+  boundary.setAttribute('r', maxRangePx);
+  boundary.setAttribute('fill', 'none'); boundary.setAttribute('stroke', 'white');
+  boundary.setAttribute('stroke-width', '1'); boundary.setAttribute('stroke-dasharray', '4,6');
+  boundary.setAttribute('opacity', '0.55');
+  svg.appendChild(boundary);
+}
+
+// Ray (origin, direction) vs segment intersection -> t (distance along ray) or null
+function raySegmentIntersect(ox, oy, dx, dy, x1, y1, x2, y2){
+  const sx = x2 - x1, sy = y2 - y1;
+  const denom = dx * sy - dy * sx;
+  if(Math.abs(denom) < 1e-9) return null; // parallel
+  const t = ((x1 - ox) * sy - (y1 - oy) * sx) / denom;
+  const u = ((x1 - ox) * dy - (y1 - oy) * dx) / denom;
+  if(t >= 0 && u >= 0 && u <= 1) return t;
+  return null;
+}
+
+// ---- Canvas click handling ----
+document.addEventListener('DOMContentLoaded', () => {
+  const canvas = document.getElementById('fp_canvas');
+  if(!canvas) return;
+  canvas.addEventListener('click', (e) => {
+    if(!fpState.imageUrl) return;
+    const rect = canvas.getBoundingClientRect();
+    const scaleX = fpState.imageWidth / rect.width;
+    const scaleY = fpState.imageHeight / rect.height;
+    const px = (e.clientX - rect.left) * scaleX;
+    const py = (e.clientY - rect.top) * scaleY;
+    handleFpClick(px, py);
+  });
+  canvas.addEventListener('dblclick', (e) => {
+    if(fpState.mode === 'wall' && fpState.wallPoints.length >= 2){
+      finishWall();
+    }
+  });
+});
+
+function handleFpClick(x, y){
+  if(fpState.mode === 'place'){
+    const name = document.getElementById('fp_gw_name').value.trim() || `GW-${fpState.gateways.length+1}`;
+    const env = document.getElementById('fp_gw_env').value;
+    fpState.gateways.push({ id: Date.now()+Math.random(), name, x, y, env });
+    document.getElementById('fp_gw_name').value = '';
+    saveFloorPlan(); renderFloorPlan();
+  } else if(fpState.mode === 'wall'){
+    fpState.wallPoints.push([x, y]);
+    renderFloorPlan();
+  } else if(fpState.mode === 'calibrate'){
+    fpState.calPoints.push([x, y]);
+    if(fpState.calPoints.length === 2){
+      promptCalibrationDistance();
+    }
+    renderFloorPlan();
+  }
+}
+
+function setFpMode(mode){
+  fpState.mode = mode;
+  document.querySelectorAll('.fp-tool-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('fp_mode_'+mode).classList.add('active');
+  const canvas = document.getElementById('fp_canvas');
+  canvas.classList.remove('mode-move','mode-place','mode-wall');
+  if(mode === 'place') canvas.classList.add('mode-place');
+  if(mode === 'wall'){ canvas.classList.add('mode-wall'); fpState.wallPoints = []; }
+  if(mode === 'calibrate') fpState.calPoints = [];
+  renderFloorPlan();
+}
+function startCalibration(){ setFpMode('calibrate'); }
+function startPlaceMode(){ setFpMode('place'); }
+function startWallMode(){ setFpMode('wall'); }
+
+function promptCalibrationDistance(){
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal">
+      <h2>Set scale</h2>
+      <p>You've marked two points on the floor plan. Enter the <b>real-world distance in meters</b> between them. Use a scale bar, a known corridor length, or door width (~0.9m) as reference.</p>
+      <label style="color:var(--sub);font-size:12px;">Distance (meters)</label>
+      <input type="number" id="cal_dist_input" step="0.1" min="0.1" style="width:100%;background:var(--panel2);border:1px solid var(--line);color:var(--text);padding:8px;border-radius:5px;">
+      <div class="row-actions">
+        <button class="save-btn" onclick="applyCalibration()">Apply</button>
+        <button class="cancel-btn" onclick="cancelCalibration()">Cancel</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(() => document.getElementById('cal_dist_input').focus(), 50);
+}
+function applyCalibration(){
+  const meters = parseFloat(document.getElementById('cal_dist_input').value);
+  if(!meters || meters <= 0){ alert('Enter a positive distance in meters.'); return; }
+  const [p1, p2] = fpState.calPoints;
+  const pxDist = Math.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2);
+  fpState.metersPerPixel = meters / pxDist;
+  fpState.calPoints = [];
+  document.querySelector('.modal-overlay').remove();
+  setFpMode('view');
+  saveFloorPlan(); renderFloorPlan();
+}
+function cancelCalibration(){
+  fpState.calPoints = [];
+  document.querySelector('.modal-overlay').remove();
+  setFpMode('view');
+  renderFloorPlan();
+}
+
+function finishWall(){
+  if(fpState.wallPoints.length < 2) return;
+  const material = document.getElementById('fp_wall_type').value;
+  fpState.walls.push({
+    id: Date.now()+Math.random(),
+    points: fpState.wallPoints.slice(),
+    material
+  });
+  fpState.wallPoints = [];
+  saveFloorPlan(); renderFloorPlan();
+}
+
+function renderFpList(){
+  const listEl = document.getElementById('fp_list');
+  const total = fpState.gateways.length + fpState.walls.length;
+  document.getElementById('fp_count').textContent = total;
+  if(total === 0){
+    listEl.innerHTML = '<div class="empty-hint">Nothing placed yet.</div>';
+    return;
+  }
+  const gwItems = fpState.gateways.map(gw => `
+    <div class="fp-item-mini">
+      <span class="mini-del" onclick="deleteFpItem('gw', '${gw.id}')">×</span>
+      <span class="badge indoor">GW</span> ${gw.name}
+      <div style="color:var(--sub);font-size:10px;margin-top:2px;">${ENV_LABEL[gw.env]||gw.env}</div>
+    </div>
+  `).join('');
+  const wallItems = fpState.walls.map((w, i) => `
+    <div class="fp-item-mini">
+      <span class="mini-del" onclick="deleteFpItem('wall', '${w.id}')">×</span>
+      <span class="badge env">WALL</span> ${WALL_LABEL[w.material]||w.material} · ${w.points.length} pts
+    </div>
+  `).join('');
+  listEl.innerHTML = gwItems + wallItems;
+}
+
+function deleteFpItem(kind, id){
+  if(kind === 'gw') fpState.gateways = fpState.gateways.filter(g => String(g.id) !== id);
+  if(kind === 'wall') fpState.walls = fpState.walls.filter(w => String(w.id) !== id);
+  saveFloorPlan(); renderFloorPlan();
+}
+
+async function saveFloorPlan(){
+  try{
+    if(window.storage){
+      // Note: storage has a 5MB limit per key. Large floor plan images may fail — that's honest.
+      const payload = JSON.stringify({
+        imageUrl: fpState.imageUrl,
+        imageWidth: fpState.imageWidth,
+        imageHeight: fpState.imageHeight,
+        metersPerPixel: fpState.metersPerPixel,
+        gateways: fpState.gateways,
+        walls: fpState.walls
+      });
+      await window.storage.set(fpState.storageKey, payload);
+    }
+  }catch(e){
+    console.warn('Floor plan save failed (may be too large for storage):', e);
+  }
+}
+
+async function loadFloorPlan(){
+  try{
+    if(window.storage){
+      const res = await window.storage.get(fpState.storageKey);
+      if(res && res.value){
+        const p = JSON.parse(res.value);
+        fpState.imageUrl = p.imageUrl;
+        fpState.imageWidth = p.imageWidth;
+        fpState.imageHeight = p.imageHeight;
+        fpState.metersPerPixel = p.metersPerPixel;
+        fpState.gateways = p.gateways || [];
+        fpState.walls = p.walls || [];
+        if(p.imageUrl){
+          document.getElementById('fp_calBtn').disabled = false;
+          document.getElementById('fp_placeBtn').disabled = false;
+          document.getElementById('fp_wallBtn').disabled = false;
+        }
+      }
+    }
+  }catch(e){}
+}
+
+function exportFloorPlan(){
+  const payload = JSON.stringify({
+    imageUrl: fpState.imageUrl,
+    imageWidth: fpState.imageWidth,
+    imageHeight: fpState.imageHeight,
+    metersPerPixel: fpState.metersPerPixel,
+    gateways: fpState.gateways,
+    walls: fpState.walls
+  }, null, 2);
+  const blob = new Blob([payload], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'floor_plan_export.json';
+  a.click();
+}
+
+function importFloorPlan(e){
+  const file = e.target.files[0];
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const p = JSON.parse(evt.target.result);
+      fpState.imageUrl = p.imageUrl;
+      fpState.imageWidth = p.imageWidth;
+      fpState.imageHeight = p.imageHeight;
+      fpState.metersPerPixel = p.metersPerPixel;
+      fpState.gateways = p.gateways || [];
+      fpState.walls = p.walls || [];
+      if(p.imageUrl){
+        document.getElementById('fp_calBtn').disabled = false;
+        document.getElementById('fp_placeBtn').disabled = false;
+        document.getElementById('fp_wallBtn').disabled = false;
+      }
+      saveFloorPlan(); renderFloorPlan();
+    } catch(err){ alert('Import failed: ' + err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function clearFloorPlan(){
+  if(!confirm('Clear the floor plan, gateways, and walls? Export first if you need a backup.')) return;
+  fpState.imageUrl = null;
+  fpState.imageWidth = 0;
+  fpState.imageHeight = 0;
+  fpState.metersPerPixel = null;
+  fpState.gateways = [];
+  fpState.walls = [];
+  fpState.mode = 'view';
+  document.getElementById('fp_calBtn').disabled = true;
+  document.getElementById('fp_placeBtn').disabled = true;
+  document.getElementById('fp_wallBtn').disabled = true;
+  saveFloorPlan(); renderFloorPlan();
+}
+
+// ============ TAB SWITCH ============
+function switchTab(tab){
+  document.querySelectorAll('.tabbtn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.getElementById('panel-live').classList.toggle('active', tab === 'live');
+  document.getElementById('panel-planning').classList.toggle('active', tab === 'planning');
+  document.getElementById('panel-noc').classList.toggle('active', tab === 'noc');
+  setTimeout(() => { if(state[tab] && state[tab].map) state[tab].map.invalidateSize(); }, 50);
+  if(tab === 'noc') renderNocDashboard();
+}
+
+// ============ INIT ============
+(async () => {
+  initMap('live');
+  initMap('planning');
+  filterEnvOptions('live');
+  filterEnvOptions('planning');
+  loadTpwCreds();
+  tpwUpdateLastSyncDisplay();
+  loadCcCreds();
+  ccUpdateLastSyncDisplay();
+  loadStatusHistory();
+  loadNocSettingsIntoUI();
+  applyNocAutoSync();
+  updateSyncAgeIndicator();
+  setInterval(updateSyncAgeIndicator, 60000);
+  const liveLoaded = await load('live');
+  await load('planning');
+  ['live','planning'].forEach(t => state[t].gateways.forEach(g => {
+    if(!g.type) g.type = 'outdoor';
+    if(!g.env) g.env = 'mixed';
+    if(!g.status) g.status = 'active';
+    if(!g.site) g.site = '';
+    if(!g.rfRegion) g.rfRegion = '';
+    if(!g.notes) g.notes = '';
+  }));
+  const hasTpwCreds = document.getElementById('tpw_host').value.trim()
+    && document.getElementById('tpw_clientid').value.trim()
+    && document.getElementById('tpw_clientsecret').value.trim();
+  // Don't auto-populate with the Victorias pilot sample on first load --
+  // start empty and only load it if the user explicitly clicks "Load
+  // Victorias pilot sample".
+  renderList('live'); renderMap('live');
+  renderList('planning'); renderMap('planning');
+  await loadFloorPlan();
+
+  // Deliberately NOT auto-syncing on load: with large fleets (1000+ base
+  // stations) a full sync fetches GPS detail per-station and can take real
+  // time, so it should only run when you explicitly ask for it.
+  if(hasTpwCreds){
+    tpwLog('Remembered ThingPark credentials found. Click "Sync gateways from ThingPark" when you want fresh data.');
+  }
+})();
+</script>
+</body>
+</html>
