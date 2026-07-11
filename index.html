@@ -720,8 +720,13 @@
           </div>
         </div>
 
-        <div class="section-label live">Recent Status Changes</div>
+        <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Recent Status Changes</span>
+          <button type="button" id="noc_history_toggle_btn" onclick="toggleNocHistorySection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+        </div>
+        <div id="noc_history_section_body">
         <div id="noc_history_list"></div>
+        </div><!-- /noc_history_section_body -->
 
         <div class="section-label live">Auto-Refresh & Alerts</div>
         <div class="info-box" style="border-left-color:var(--accent);">
@@ -1425,6 +1430,15 @@ function toggleNocDownSection(){
 function toggleNocSiteSection(){
   const body = document.getElementById('noc_site_section_body');
   const btn = document.getElementById('noc_site_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Same collapse behavior for "Recent Status Changes" -- this list can grow
+// long on a busy shift, and this keeps the dashboard from getting unwieldy.
+function toggleNocHistorySection(){
+  const body = document.getElementById('noc_history_section_body');
+  const btn = document.getElementById('noc_history_toggle_btn');
   const hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
