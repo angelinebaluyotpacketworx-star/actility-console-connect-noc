@@ -682,8 +682,22 @@
         </div>
         <div id="noc_kpis" class="noc-kpi-grid"></div>
 
-        <div class="section-label live">Diagnosed Issues (Gateway + SIM cross-check)</div>
+        <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Diagnosed Issues (Gateway + SIM cross-check)</span>
+          <button type="button" id="noc_diag_toggle_btn" onclick="toggleNocDiagSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+        </div>
+        <div id="noc_diag_section_body">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <label style="margin:0;font-size:11px;color:var(--sub);white-space:nowrap;">Filter:</label>
+          <select id="noc_diag_filter" onchange="renderNocDashboard()" style="flex:1;">
+            <option value="all">All diagnosis types</option>
+            <option value="backhaul">Backhaul / Device Fault</option>
+            <option value="billing">Connectivity / Billing Issue</option>
+            <option value="anomaly">Traffic Anomaly Alert</option>
+          </select>
+        </div>
         <div id="noc_diag_table"></div>
+        </div><!-- /noc_diag_section_body -->
 
         <div class="noc-two-col" style="margin-top:18px;">
           <div>
@@ -1230,11 +1244,17 @@ function renderNocDashboard(){
     }
   }
 
+  const diagFilterEl = document.getElementById('noc_diag_filter');
+  const diagFilterVal = diagFilterEl ? diagFilterEl.value : 'all';
+  const diagnosedFiltered = diagFilterVal === 'all' ? diagnosed : diagnosed.filter(d => d.diag.code === diagFilterVal);
+
   const diagEl = document.getElementById('noc_diag_table');
   if(diagEl) diagEl.innerHTML = diagnosed.length === 0
     ? '<div class="empty-hint">No gateway+SIM cross-check issues flagged right now.</div>'
+    : diagnosedFiltered.length === 0
+    ? '<div class="empty-hint">No diagnosed issues match this filter.</div>'
     : `<table class="noc-table"><thead><tr><th>Gateway</th><th>Diagnosis</th><th>Detail</th></tr></thead><tbody>
-        ${diagnosed.map(({g,diag}) => `<tr>
+        ${diagnosedFiltered.map(({g,diag}) => `<tr>
           <td>${g.name}${g.site?'<br><span style="color:var(--sub);font-size:10.5px;">'+g.site+'</span>':''}</td>
           <td><span class="badge diag-${diag.color}">⚠ ${diag.label}</span></td>
           <td style="font-size:11px;color:var(--sub);">${diag.detail}</td>
@@ -1376,6 +1396,16 @@ function toggleTpwSection(){
 function toggleAddGwSection(){
   const body = document.getElementById('addgw_section_body');
   const btn = document.getElementById('addgw_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Collapses the "Diagnosed Issues" table on the NOC dashboard, same as the
+// two toggles below -- keeps the page short. The filter dropdown inside
+// stays at whatever the operator last set even while collapsed.
+function toggleNocDiagSection(){
+  const body = document.getElementById('noc_diag_section_body');
+  const btn = document.getElementById('noc_diag_toggle_btn');
   const hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
