@@ -413,13 +413,12 @@
           <label>Platform base URL</label>
           <input id="cc_host" placeholder="e.g. api.consoleconnect.com">
           <div class="row2">
-            <div><label>API key / token</label><input id="cc_apikey" type="password" placeholder="••••••••••••••••"></div>
-            <div><label>Auth header</label>
-              <select id="cc_authstyle">
-                <option value="bearer">Authorization: Bearer</option>
-                <option value="apikey">X-API-Key</option>
-              </select>
-            </div>
+            <div><label>Client ID</label><input id="cc_client_id" placeholder="OAuth2 client_id"></div>
+            <div><label>Enterprise ID</label><input id="cc_enterprise_id" placeholder="e.g. 1.2.3.44 (organizationID)"></div>
+          </div>
+          <div class="row2">
+            <div><label>Username</label><input id="cc_username" placeholder="OAuth2 username"></div>
+            <div><label>Password</label><input id="cc_password" type="password" placeholder="••••••••••••••••"></div>
           </div>
           <label style="display:flex;align-items:center;gap:8px;margin-top:8px;cursor:pointer;">
             <input type="checkbox" id="cc_remember" style="width:auto;">
@@ -436,7 +435,7 @@
           <input id="cc_spike_threshold" placeholder="e.g. 5000 -- leave blank to disable" oninput="ccSaveSpikeThreshold()">
 
           <div class="caveat">
-            <b>Scaffold, not confirmed:</b> Console Connect's SIM API isn't publicly documented — PCCW Global provides it to customers on request, so the endpoint/response shape above (<code>/iot/v1/subscriptions?iccid=</code>) is a best guess to be corrected once you have the real spec. <b>The CSV import above works today</b> with no credentials — it reads the exact file Console Connect's own portal exports.
+            <b>Auth confirmed, SIM lookup still a scaffold:</b> login now uses the real Aeris IoT-A OAuth2 password-grant flow (<code>POST /iot/api/auth/token</code> → Bearer token → <code>/iot/api/ecm/enterprises/{enterprise_id}/...</code>), taken from PCCW Console Connect's official Enterprise Management API v26.1 spec. That document covers enterprise/subscription-package administration only — it has no endpoint to look up a single SIM's live status by ICCID, so the lookup path itself is still a best guess to be corrected once you have that spec (or its sibling doc). <b>The CSV import below works today</b> with no credentials — it reads the exact file Console Connect's own portal exports.
             <br><br>
             <b>Diagnosis:</b> gateway offline + SIM active → Backhaul/Device Fault. Gateway offline + SIM inactive → Connectivity/Billing Issue. Gateway online + usage over your threshold → Traffic Anomaly Alert (off until you set a threshold above — a single reading has no trend to compare against).
           </div>
@@ -972,7 +971,9 @@ function applyNocAutoSync(){
       const settingsNow = getNocSettings();
       if(settingsNow.autoSyncIncludeCc){
         const hasCcCreds = document.getElementById('cc_host').value.trim()
-          && document.getElementById('cc_apikey').value.trim();
+          && document.getElementById('cc_client_id').value.trim()
+          && document.getElementById('cc_username').value.trim()
+          && document.getElementById('cc_password').value.trim();
         const ccBtn = document.getElementById('cc_syncBtn');
         if(hasCcCreds && ccBtn && !ccBtn.disabled) syncFromConsoleConnect();
       }
@@ -2823,28 +2824,39 @@ async function syncFromThingPark(){
 // state can be combined with the gateway's own online/offline state into
 // the Gateway + SIM cross-check diagnosis below.
 //
-// IMPORTANT -- this is a scaffold, not a confirmed integration. PCCW Global
-// does not publish the Console Connect IoT REST API publicly; it's provided
-// to customers on request, and the exact base URL / auth style / response
-// shape vary per deployment. ccLookupIccid() below targets a best-guess
-// REST shape -- GET {baseUrl}/iot/v1/subscriptions?iccid={id} -- and
-// ccExtractSimFields() probes several plausible field names in the
-// response, the same defensive-probing approach used for the ThingPark
-// integration above. Confirm the real endpoint/response shape with PCCW
-// Global once available and adjust those two functions -- everything
-// downstream (diagnosis, badges, filters, CSV import) already works off
-// the normalized {status, imsi, msisdn, label, pkg, dataMB} shape they
-// produce, so nothing else needs to change.
+// AUTH IS CONFIRMED -- taken directly from PCCW Console Connect's official
+// "Enterprise Management API" v26.1 spec (Aeris IoT Accelerator / IoT-A):
+// OAuth2 password grant against POST {baseUrl}/iot/api/auth/token
+// (grant_type=password&client_id=...&username=...&password=...) returning
+// a Bearer access_token, used against the {baseUrl}/iot/api/ecm/enterprises
+// API root. Errors from that API come back as application/problem+json
+// ({type, title, status, detail, instance}) and are parsed accordingly by
+// ccParseErrorResponse() below.
 //
-// Until real API access is confirmed, "Import Subscriptions CSV" works
-// today with no credentials -- it reads the exact export format Console
-// Connect's own portal produces (confirmed against a real exported file:
-// IMSI, Label, ICCID, MSISDN, Detected IMEI, Assigned IMEI, Subscription
-// package ID, Subscription package description, Specification ID, State,
-// State lock, State lock description, Enterprise, First activation date,
-// PBR exit date, Fixed/Subnet IPv4/IPv6, Monthly data, Monthly SMS, Label#)
-// and matches rows to gateways by ICCID.
-const CC_CREDS_KEY = 'cc_creds_v1';
+// THE ICCID LOOKUP ITSELF IS STILL A SCAFFOLD -- that spec document only
+// covers enterprise/subscription-package/SIM-specification (order template)
+// administration; it has no endpoint to look up a single deployed SIM by
+// ICCID and get live status. ccLookupIccid() below keeps a best-guess path
+// under the now-correct API root -- GET {baseUrl}/iot/api/ecm/enterprises/
+// {enterprise_id}/subscriptions?iccid={id} -- and ccExtractSimFields()
+// probes several plausible field names in the response, the same
+// defensive-probing approach used for the ThingPark integration above.
+// Correct the URL path in ccLookupIccid() once you have the real
+// subscription/device-status endpoint (a sibling Aeris doc, often called
+// "Subscription Management API" or "Devices/Diagnostics API") -- everything
+// downstream (diagnosis, badges, filters, CSV import) already works off the
+// normalized {status, imsi, msisdn, label, pkg, dataMB} shape it produces,
+// so nothing else needs to change.
+//
+// Until that endpoint is confirmed, "Import Subscriptions CSV" works today
+// with no credentials -- it reads the exact export format Console Connect's
+// own portal produces (confirmed against a real exported file: IMSI, Label,
+// ICCID, MSISDN, Detected IMEI, Assigned IMEI, Subscription package ID,
+// Subscription package description, Specification ID, State, State lock,
+// State lock description, Enterprise, First activation date, PBR exit date,
+// Fixed/Subnet IPv4/IPv6, Monthly data, Monthly SMS, Label#) and matches
+// rows to gateways by ICCID.
+const CC_CREDS_KEY = 'cc_creds_v2';
 const CC_LAST_SYNC_KEY = 'cc_last_sync_v1';
 const CC_SPIKE_KEY = 'cc_spike_threshold_mb_v1';
 
@@ -2868,14 +2880,16 @@ function loadCcCreds(){
     if(!raw) return;
     const c = JSON.parse(raw);
     document.getElementById('cc_host').value = c.host || '';
-    document.getElementById('cc_apikey').value = c.apiKey || '';
-    document.getElementById('cc_authstyle').value = c.authStyle || 'bearer';
+    document.getElementById('cc_client_id').value = c.clientId || '';
+    document.getElementById('cc_enterprise_id').value = c.enterpriseId || '';
+    document.getElementById('cc_username').value = c.username || '';
+    document.getElementById('cc_password').value = c.password || '';
     document.getElementById('cc_remember').checked = true;
   }catch(e){}
 }
-function saveCcCreds(host, apiKey, authStyle, remember){
+function saveCcCreds(host, clientId, enterpriseId, username, password, remember){
   if(remember){
-    localStorage.setItem(CC_CREDS_KEY, JSON.stringify({host, apiKey, authStyle}));
+    localStorage.setItem(CC_CREDS_KEY, JSON.stringify({host, clientId, enterpriseId, username, password}));
   } else {
     localStorage.removeItem(CC_CREDS_KEY);
   }
@@ -2942,17 +2956,57 @@ function ccNormalizeIccid(iccid){
   return String(iccid || '').trim().replace(/[^0-9]+$/, '');
 }
 
-async function ccLookupIccid(baseUrl, iccid, apiKey, authStyle){
-  const url = `${baseUrl}/iot/v1/subscriptions?iccid=${encodeURIComponent(iccid)}`;
-  const headers = { 'Accept': 'application/json' };
-  if(authStyle === 'apikey') headers['X-API-Key'] = apiKey;
-  else headers['Authorization'] = `Bearer ${apiKey}`;
+// Parses the Aeris IoT-A "application/problem+json" error shape confirmed
+// in the official spec: {type, title, status, detail, instance}. Falls back
+// to raw response text, then to a bare HTTP status, if the body isn't in
+// that shape (e.g. a gateway/proxy error page instead of a real API error).
+async function ccParseErrorResponse(res){
+  let bodyText = '';
+  try{ bodyText = await res.text(); }catch(e){}
+  try{
+    const problem = JSON.parse(bodyText);
+    if(problem && (problem.title || problem.detail)){
+      return `HTTP ${res.status}${problem.title ? ' -- ' + problem.title : ''}${problem.detail ? ': ' + problem.detail : ''}`;
+    }
+  }catch(e){ /* not JSON, fall through */ }
+  return `HTTP ${res.status}${bodyText ? ' -- ' + bodyText.slice(0, 200) : ''}`;
+}
+
+// Real OAuth2/OIDC password-grant token fetch, confirmed against PCCW
+// Console Connect's official Enterprise Management API v26.1 spec:
+// POST {baseUrl}/iot/api/auth/token, form-urlencoded body
+// grant_type=password&client_id=...&username=...&password=..., returns an
+// access_token used as `Authorization: Bearer <token>` on every subsequent
+// call to the {baseUrl}/iot/api/ecm/enterprises API root.
+async function ccGetToken(baseUrl, clientId, username, password){
+  const url = `${baseUrl}/iot/api/auth/token`;
+  const body = new URLSearchParams({ grant_type: 'password', client_id: clientId, username, password });
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Accept': 'application/vnd.dcp-v1+json',
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body: body.toString()
+  });
+  if(!res.ok) throw new Error(`Login failed: ${await ccParseErrorResponse(res)}`);
+  const json = await res.json();
+  const token = json.access_token || json.accessToken;
+  if(!token) throw new Error('Login succeeded but no access_token in response');
+  return token;
+}
+
+// THE LOOKUP PATH ITSELF IS STILL UNCONFIRMED -- see the block comment
+// above this section. The Enterprise Management API spec has no per-ICCID
+// live-status endpoint; this targets a best-guess path under the now-
+// correct /iot/api/ecm/enterprises root and should be corrected once the
+// real subscription/device-status endpoint is confirmed.
+async function ccLookupIccid(baseUrl, enterpriseId, iccid, token){
+  const enterprisePath = enterpriseId ? `/${encodeURIComponent(enterpriseId)}` : '';
+  const url = `${baseUrl}/iot/api/ecm/enterprises${enterprisePath}/subscriptions?iccid=${encodeURIComponent(iccid)}`;
+  const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${token}` };
   const res = await fetch(url, { headers });
-  if(!res.ok){
-    let detail = '';
-    try{ detail = (await res.text()).slice(0, 200); }catch(e){}
-    throw new Error(`HTTP ${res.status}${detail ? ' -- ' + detail : ''}`);
-  }
+  if(!res.ok) throw new Error(await ccParseErrorResponse(res));
   const json = await res.json();
   const fields = ccExtractSimFields(json);
   if(!fields) throw new Error('Empty response');
@@ -2961,17 +3015,19 @@ async function ccLookupIccid(baseUrl, iccid, apiKey, authStyle){
 
 async function syncFromConsoleConnect(){
   const hostRaw = document.getElementById('cc_host').value.trim();
-  const apiKey = document.getElementById('cc_apikey').value.trim();
-  const authStyle = document.getElementById('cc_authstyle').value;
+  const clientId = document.getElementById('cc_client_id').value.trim();
+  const enterpriseId = document.getElementById('cc_enterprise_id').value.trim();
+  const username = document.getElementById('cc_username').value.trim();
+  const password = document.getElementById('cc_password').value.trim();
   const remember = document.getElementById('cc_remember').checked;
   const btn = document.getElementById('cc_syncBtn');
 
-  if(!hostRaw || !apiKey){
-    ccLog("Please fill in the base URL and API key. If you don't have API access yet, use \"Import Subscriptions CSV\" instead.");
+  if(!hostRaw || !clientId || !username || !password){
+    ccLog("Please fill in the base URL, client ID, username, and password. If you don't have API access yet, use \"Import Subscriptions CSV\" instead.");
     return;
   }
   const baseUrl = hostRaw.startsWith('http') ? hostRaw.replace(/\/$/, '') : `https://${hostRaw.replace(/\/$/, '')}`;
-  saveCcCreds(hostRaw, apiKey, authStyle, remember);
+  saveCcCreds(hostRaw, clientId, enterpriseId, username, password, remember);
 
   const targets = state.live.gateways.filter(g => ccNormalizeIccid(g.iccid) !== '');
   if(targets.length === 0){
@@ -2981,12 +3037,24 @@ async function syncFromConsoleConnect(){
 
   btn.disabled = true;
   const originalLabel = btn.textContent;
-  ccLog(`Checking ${targets.length} SIM(s) against Console Connect...`);
+  ccLog('Logging in (OAuth2 password grant)...');
+
+  let token;
+  try{
+    token = await ccGetToken(baseUrl, clientId, username, password);
+  }catch(err){
+    ccLog(`Login failed: ${err.message}`, true);
+    btn.disabled = false;
+    btn.textContent = originalLabel;
+    return;
+  }
+
+  ccLog(`Logged in. Checking ${targets.length} SIM(s) against Console Connect...`, true);
 
   let ok = 0, failed = 0, completed = 0;
   await tpwMapWithConcurrency(targets, 6, async (gw) => {
     try{
-      const fields = await ccLookupIccid(baseUrl, ccNormalizeIccid(gw.iccid), apiKey, authStyle);
+      const fields = await ccLookupIccid(baseUrl, enterpriseId, ccNormalizeIccid(gw.iccid), token);
       gw.simStatus = fields.status;
       gw.simImsi = fields.imsi;
       gw.simMsisdn = fields.msisdn;
@@ -3008,7 +3076,7 @@ async function syncFromConsoleConnect(){
   localStorage.setItem(CC_LAST_SYNC_KEY, new Date().toISOString());
   ccUpdateLastSyncDisplay();
   checkDiagnosisAlerts();
-  ccLog(`Done: ${ok} checked, ${failed} failed.${failed > 0 ? ' If every lookup failed, the placeholder endpoint/response shape almost certainly needs adjusting to match your actual Console Connect API -- see the caveat above.' : ''}`, true);
+  ccLog(`Done: ${ok} checked, ${failed} failed.${failed > 0 ? ' Login succeeded, so if every lookup still failed, the SIM-lookup URL path (not the auth) almost certainly needs adjusting to match the real Console Connect subscription/device-status endpoint once confirmed -- see the caveat above.' : ''}`, true);
   btn.disabled = false;
   btn.textContent = originalLabel;
 }
