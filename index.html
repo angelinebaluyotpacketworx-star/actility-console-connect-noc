@@ -947,7 +947,7 @@ function flushNocInactiveBatch(){
   const gatewayCountLine = `Number of gateways currently down: <strong>${batch.length}</strong>${pctLabel}`;
   const emailBody = severity >= 1
     ? `<strong>🔴 Major Gateway Outage</strong><br><br>`
-      + `A mass gateway outage is currently in progress, affecting multiple sites. NOC personnel are advised to immediately check the NOC Dashboard and closely monitor all affected gateways until service is restored.<br><br>`
+      + `A major gateway outage is currently in progress, affecting multiple sites. NOC personnel are advised to immediately check the NOC Dashboard and closely monitor all affected gateways until service is restored.<br><br>`
       + `${gatewayCountLine}`
     : `<strong>🟡 Minor Gateway Outage</strong><br><br>`
       + `A gateway outage has been detected affecting a limited number of sites. NOC personnel are advised to check the NOC Dashboard and monitor the status of the affected gateways.<br><br>`
