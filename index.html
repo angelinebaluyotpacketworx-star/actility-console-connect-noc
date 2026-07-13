@@ -930,27 +930,20 @@ function flushNocInactiveBatch(){
       : batch.length === 1
         ? `⚠ Gateway went inactive: ${shown}`
         : `⚠ ${batch.length} gateways went inactive: ${shown}${extra}`;
-  // NOC-approved customer-facing email body -- "small outage" wording for
-  // severity 0 (Email 1) and "mass outage" wording for severity 1/2 (Email
-  // 2), both including the actual down-gateway count. Uses <br> instead of
-  // \n since EmailJS substitutes {{message}} directly into the template's
-  // raw HTML, where plain newlines wouldn't render as line breaks.
-  const gatewayCountLine = `Number of gateways currently down: <strong>${batch.length}</strong>${pctLabel}<br>Affected: ${shown}${extra}`;
+  // NOC-approved customer-facing email body (short form, per NOC team
+  // review) -- "small outage" wording for severity 0 (Email 1) and "mass
+  // outage" wording for severity 1/2 (Email 2). Uses <br> instead of \n
+  // since EmailJS substitutes {{message}} directly into the template's raw
+  // HTML, where plain newlines wouldn't render as line breaks.
   const emailBody = severity >= 1
-    ? `Good day, Ma'am / Sir,<br><br>`
-      + `We are currently experiencing a mass gateway outage affecting multiple sites and gateway connections.<br><br>`
-      + `Our Network Operations Team has initiated an immediate investigation and is working to restore services as quickly as possible. We kindly request that you check your NOC Dashboard to monitor the behavior and status of the affected gateways.<br><br>`
-      + `${gatewayCountLine}<br><br>`
-      + `We will provide regular updates as progress is made and notify you once services have been restored.<br><br>`
-      + `Thank you for your patience and understanding.<br><br>`
-      + `Best regards,<br>Network Operations Center (NOC)<br>Network Engineering Team`
-    : `Good day, Ma'am / Sir,<br><br>`
-      + `We are currently experiencing a small gateway outage affecting a limited number of sites.<br><br>`
-      + `Our Network Operations Team is actively monitoring and investigating the issue. We kindly request that you check your NOC Dashboard to monitor the behavior and status of the affected gateways.<br><br>`
-      + `${gatewayCountLine}<br><br>`
-      + `We will continue to provide updates as more information becomes available.<br><br>`
-      + `Thank you for your patience and understanding.<br><br>`
-      + `Best regards,<br>Network Operations Center (NOC)<br>Network Engineering Team`;
+    ? `We are currently experiencing a mass gateway outage affecting multiple sites and gateway connections.<br>`
+      + `Please monitor your NOC Dashboard for the latest gateway status and updates.<br><br>`
+      + `Thank you for your patience and understanding.<br>`
+      + `– Network Operations Center (NOC)`
+    : `We are currently experiencing a small gateway outage affecting multiple sites and gateway connections.<br>`
+      + `Please monitor your NOC Dashboard for the latest gateway status and updates.<br><br>`
+      + `Thank you for your patience and understanding.<br>`
+      + `– Network Operations Center (NOC)`;
   fireNocAlert(msg, new Date().toISOString(), severity, emailBody);
 }
 // Most recent history entry for a gateway (array is newest-first). Used to
