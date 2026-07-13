@@ -758,11 +758,11 @@
           <label>Email 2 -- mass-outage escalation (optional)</label>
           <input id="noc_emailTo2" placeholder="noc-manager@yourcompany.com" onchange="updateNocSettings()">
           <div class="row2">
-            <div><label>Level 1 threshold (gateways down at once)</label><input id="noc_level1Threshold" type="number" min="2" step="1" value="10" onchange="updateNocSettings()"></div>
-            <div><label>Level 2 threshold (critical)</label><input id="noc_level2Threshold" type="number" min="2" step="1" value="20" onchange="updateNocSettings()"></div>
+            <div><label>Level 1 threshold (% of fleet down at once)</label><input id="noc_level1Threshold" type="number" min="1" max="100" step="1" value="10" onchange="updateNocSettings()"></div>
+            <div><label>Level 2 threshold (% critical)</label><input id="noc_level2Threshold" type="number" min="1" max="100" step="1" value="25" onchange="updateNocSettings()"></div>
           </div>
           <div style="font-size:10.5px;color:var(--sub);margin:4px 0 10px;line-height:1.5;">
-            Gateways that go inactive in the same sync (or the same manual edit) are grouped into one alert instead of one email each. Below the Level 1 threshold, it goes to Email 1 as a normal alert. At or above Level 1, it's a "Level 1" outage alert to Email 2. At or above Level 2, it's escalated further to a "Level 2 -- critical" alert, still to Email 2 (leave Email 2 blank to send everything to Email 1 instead).
+            Gateways that go inactive in the same sync (or the same manual edit) are grouped into one alert instead of one email each. The batch size is compared against your total fleet size as a percentage -- e.g. 10 gateways down out of 100 total is 10%. Below the Level 1 threshold, it goes to Email 1 as a normal alert. At or above Level 1, it's a "Level 1" outage alert to Email 2. At or above Level 2, it's escalated further to a "Level 2 -- critical" alert, still to Email 2 (leave Email 2 blank to send everything to Email 1 instead).
           </div>
           <div class="row2">
             <div><label>EmailJS Service ID</label><input id="noc_emailServiceId" placeholder="service_xxxxxxx" onchange="updateNocSettings()"></div>
@@ -896,24 +896,30 @@ function recordStatusChange(gw, fromStatus, toStatus){
   if(toStatus === 'inactive') _nocBatchInactive.push({ name: gw.name||'Unnamed gateway', site: gw.site||'' });
 }
 // Turns whatever accumulated in _nocBatchInactive into a single alert with a
-// three-tier severity: below Level 1 threshold it's a normal alert to Email
-// 1; at or above Level 1 it's a "Level 1" outage alert to Email 2; at or
-// above Level 2 (always >= Level 1, in case the two get set out of order)
-// it's escalated further to "Level 2 -- critical", still to Email 2.
+// three-tier severity, based on what percentage of the total fleet just went
+// inactive together (not a raw count) -- e.g. with a 100-gateway fleet and a
+// 10% Level 1 threshold, 10 gateways going down at once triggers Level 1.
+// Below Level 1 threshold it's a normal alert to Email 1; at or above Level 1
+// it's a "Level 1" outage alert to Email 2; at or above Level 2 (always >=
+// Level 1, in case the two get set out of order) it's escalated further to
+// "Level 2 -- critical", still to Email 2.
 function flushNocInactiveBatch(){
   const batch = _nocBatchInactive;
   _nocBatchInactive = [];
   if(batch.length === 0) return;
   const s = getNocSettings();
+  const total = state.live.gateways.length;
+  const percentDown = total > 0 ? (batch.length / total) * 100 : 0;
   const level1 = s.level1Threshold;
   const level2 = Math.max(s.level2Threshold, level1);
-  const severity = batch.length >= level2 ? 2 : batch.length >= level1 ? 1 : 0;
+  const severity = percentDown >= level2 ? 2 : percentDown >= level1 ? 1 : 0;
   const shown = batch.slice(0, 10).map(b => b.name + (b.site ? ' (' + b.site + ')' : '')).join(', ');
   const extra = batch.length > 10 ? `, +${batch.length - 10} more` : '';
+  const pctLabel = total > 0 ? ` (${percentDown.toFixed(1)}% of fleet)` : '';
   const msg = severity === 2
-    ? `⚠ CRITICAL (Level 2): ${batch.length} gateways went inactive at once -- ${shown}${extra}`
+    ? `⚠ CRITICAL (Level 2): ${batch.length} gateways went inactive at once${pctLabel} -- ${shown}${extra}`
     : severity === 1
-      ? `⚠ Level 1 outage: ${batch.length} gateways went inactive at once -- ${shown}${extra}`
+      ? `⚠ Level 1 outage: ${batch.length} gateways went inactive at once${pctLabel} -- ${shown}${extra}`
       : batch.length === 1
         ? `⚠ Gateway went inactive: ${shown}`
         : `⚠ ${batch.length} gateways went inactive: ${shown}${extra}`;
@@ -961,7 +967,7 @@ function checkDiagnosisAlerts(){
 
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
-const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailTo2:'', level1Threshold:10, level2Threshold:20, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailTo2:'', level1Threshold:10, level2Threshold:25, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
 function getNocSettings(){
   try{
     const raw = localStorage.getItem(NOC_SETTINGS_KEY);
@@ -1010,8 +1016,8 @@ function updateNocSettings(){
     emailEnabled: document.getElementById('noc_emailEnabled').checked,
     emailTo: document.getElementById('noc_emailTo').value.trim(),
     emailTo2: document.getElementById('noc_emailTo2').value.trim(),
-    level1Threshold: Math.max(2, parseInt(document.getElementById('noc_level1Threshold').value,10) || 10),
-    level2Threshold: Math.max(2, parseInt(document.getElementById('noc_level2Threshold').value,10) || 20),
+    level1Threshold: Math.max(1, parseInt(document.getElementById('noc_level1Threshold').value,10) || 10),
+    level2Threshold: Math.max(1, parseInt(document.getElementById('noc_level2Threshold').value,10) || 25),
     emailServiceId: document.getElementById('noc_emailServiceId').value.trim(),
     emailTemplateId: document.getElementById('noc_emailTemplateId').value.trim(),
     emailPublicKey: document.getElementById('noc_emailPublicKey').value.trim()
@@ -1153,7 +1159,7 @@ async function testNocWebhook(){
         try{
           await emailjs.send(s.emailServiceId, s.emailTemplateId, {
             to_email: s.emailTo2, subject: 'LoRaWAN NOC Test Alert (Email 2 — escalation)',
-            message: `✅ Test alert — this is where Level 1 (${s.level1Threshold}+ gateways down at once) and Level 2 -- critical (${s.level2Threshold}+ gateways) alerts go.`,
+            message: `✅ Test alert — this is where Level 1 (${s.level1Threshold}%+ of fleet down at once) and Level 2 -- critical (${s.level2Threshold}%+ of fleet) alerts go.`,
             time: new Date().toLocaleString()
           }, { publicKey: s.emailPublicKey });
           results.push(`Test email sent to Email 2 (${s.emailTo2}).`);
@@ -3200,7 +3206,7 @@ function computeDiagnosis(gw){
   const simDown = gw.simStatus === 'inactive';
   if(gwOffline && simActive){
     return { code:'backhaul', label:'Backhaul / Device Fault', color:'danger',
-      detail:'SIM is live but the gateway is not responding. Check power, ethernet/VPN tunnel, or gateway hardware failure.' };
+      detail:'SIM is Active in Console Connect but the gateway is not responding. Check power, ethernet/VPN tunnel, or gateway hardware failure.' };
   }
   if(gwOffline && simDown){
     return { code:'billing', label:'Connectivity / Billing Issue', color:'danger',
