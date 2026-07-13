@@ -961,7 +961,7 @@ function checkDiagnosisAlerts(){
 
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
-const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:false, emailTo:'', emailTo2:'', level1Threshold:10, level2Threshold:20, emailServiceId:'', emailTemplateId:'', emailPublicKey:'' };
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailTo2:'', level1Threshold:10, level2Threshold:20, emailServiceId:'networkteamemail', emailTemplateId:'template_4309cmj', emailPublicKey:'YkBn47lz8aUHbtjRr' };
 function getNocSettings(){
   try{
     const raw = localStorage.getItem(NOC_SETTINGS_KEY);
