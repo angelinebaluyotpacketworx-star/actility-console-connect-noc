@@ -357,8 +357,13 @@
           </div>
           </div><!-- /addgw_section_body -->
 
-          <div class="section-label live" style="margin-top:20px;">Gateways (<span id="live_count">0</span>)</div>
+          <div class="section-label live" style="margin-top:20px;display:flex;align-items:center;justify-content:space-between;">
+            <span>Gateways (<span id="live_count">0</span>)</span>
+            <button type="button" id="live_list_toggle_btn" onclick="toggleLiveListSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+          </div>
+          <div id="live_list_section_body">
           <div id="live_list"><div class="empty-hint">No gateways yet — add one above.</div></div>
+          </div><!-- /live_list_section_body -->
 
           <div class="section-label live">Data</div>
           <button class="ghost-btn" onclick="exportCSV('live')">Export CSV</button>
@@ -1407,6 +1412,17 @@ function toggleTpwSection(){
 function toggleAddGwSection(){
   const body = document.getElementById('addgw_section_body');
   const btn = document.getElementById('addgw_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Collapses the "Gateways (N/N)" list in the Live Coverage sidebar -- a
+// fleet in the thousands makes this list very long, so this keeps the
+// sidebar manageable without losing the data underneath (the count in the
+// header keeps updating even while collapsed).
+function toggleLiveListSection(){
+  const body = document.getElementById('live_list_section_body');
+  const btn = document.getElementById('live_list_toggle_btn');
   const hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
