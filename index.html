@@ -946,12 +946,10 @@ function flushNocInactiveBatch(){
   // HTML, where plain newlines wouldn't render as line breaks.
   const gatewayCountLine = `Number of gateways currently down: <strong>${batch.length}</strong>${pctLabel}`;
   const emailBody = severity >= 1
-    ? `🔴 Mass Outage<br><br>`
-      + `<strong>Mass Gateway Outage</strong><br><br>`
+    ? `<strong>🔴 Mass Gateway Outage</strong><br><br>`
       + `A mass gateway outage is currently in progress, affecting multiple sites. NOC personnel are advised to immediately check the NOC Dashboard and closely monitor all affected gateways until service is restored.<br><br>`
       + `${gatewayCountLine}`
-    : `🟡 Minor Outage<br><br>`
-      + `<strong>Minor Gateway Outage</strong><br><br>`
+    : `<strong>🟡 Minor Gateway Outage</strong><br><br>`
       + `A gateway outage has been detected affecting a limited number of sites. NOC personnel are advised to check the NOC Dashboard and monitor the status of the affected gateways.<br><br>`
       + `${gatewayCountLine}`;
   fireNocAlert(msg, new Date().toISOString(), severity, emailBody);
