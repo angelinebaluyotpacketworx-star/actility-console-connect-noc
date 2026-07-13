@@ -767,11 +767,16 @@
           <label>Email 2 CC (optional)</label>
           <input id="noc_emailCc2" placeholder="cc-recipient@yourcompany.com" onchange="updateNocSettings()">
           <div class="row2">
-            <div><label>Level 1 threshold (% of fleet down at once)</label><input id="noc_level1Threshold" type="number" min="1" max="100" step="1" value="10" onchange="updateNocSettings()"></div>
+            <div><label>Level 1 threshold (% of baseline down at once)</label><input id="noc_level1Threshold" type="number" min="1" max="100" step="1" value="10" onchange="updateNocSettings()"></div>
             <div><label>Level 2 threshold (% critical)</label><input id="noc_level2Threshold" type="number" min="1" max="100" step="1" value="25" onchange="updateNocSettings()"></div>
           </div>
+          <label>Active gateway baseline (used as 100% for the thresholds above)</label>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="noc_activeBaseline" type="number" min="0" step="1" placeholder="e.g. 747" onchange="updateNocSettings()" style="flex:1;">
+            <button type="button" class="ghost-btn" style="max-width:200px;white-space:nowrap;" onclick="recalcActiveBaseline()">Use current active count</button>
+          </div>
           <div style="font-size:10.5px;color:var(--sub);margin:4px 0 10px;line-height:1.5;">
-            Gateways that go inactive in the same sync (or the same manual edit) are grouped into one alert instead of one email each. The batch size is compared against your total fleet size as a percentage -- e.g. 10 gateways down out of 100 total is 10%. Below the Level 1 threshold, it goes to Email 1 as a normal alert. At or above Level 1, it's a "Level 1" outage alert to Email 2. At or above Level 2, it's escalated further to a "Level 2 -- critical" alert, still to Email 2 (leave Email 2 blank to send everything to Email 1 instead).
+            Gateways that go inactive in the same sync (or the same manual edit) are grouped into one alert instead of one email each. The batch size is compared against your <b>active gateway baseline</b> (not your total fleet size) as a percentage -- e.g. if only ~50% of a 1493-gateway fleet is normally active (747), set the baseline to 747 so 75 gateways down (10%) triggers Level 1 and 187 down (25%) triggers Level 2, instead of diluting against the full 1493. Leave the baseline at 0 or blank to fall back to total fleet size. Click "Use current active count" to set it from what's currently synced in Live Coverage. Below the Level 1 threshold, it goes to Email 1 as a normal alert. At or above Level 1, it's a "minor outage" alert. At or above Level 2, it's escalated further to a "mass outage" alert (still routed per the Email 1/Email 2 rules above).
           </div>
           <div class="row2">
             <div><label>EmailJS Service ID</label><input id="noc_emailServiceId" placeholder="service_xxxxxxx" onchange="updateNocSettings()"></div>
@@ -917,14 +922,14 @@ function flushNocInactiveBatch(){
   _nocBatchInactive = [];
   if(batch.length === 0) return;
   const s = getNocSettings();
-  const total = state.live.gateways.length;
+  const total = (s.activeBaseline && s.activeBaseline > 0) ? s.activeBaseline : state.live.gateways.length;
   const percentDown = total > 0 ? (batch.length / total) * 100 : 0;
   const level1 = s.level1Threshold;
   const level2 = Math.max(s.level2Threshold, level1);
   const severity = percentDown >= level2 ? 2 : percentDown >= level1 ? 1 : 0;
   const shown = batch.slice(0, 10).map(b => b.name + (b.site ? ' (' + b.site + ')' : '')).join(', ');
   const extra = batch.length > 10 ? `, +${batch.length - 10} more` : '';
-  const pctLabel = total > 0 ? ` (${percentDown.toFixed(1)}% of fleet)` : '';
+  const pctLabel = total > 0 ? ` (${percentDown.toFixed(1)}% of baseline)` : '';
   // Short plain-text summary -- goes to desktop notifications and the
   // Slack/Teams webhook, which render raw text (not the formatted email).
   const msg = severity === 2
@@ -993,7 +998,7 @@ function checkDiagnosisAlerts(){
 
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
-const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, activeBaseline:0, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
 function getNocSettings(){
   try{
     const raw = localStorage.getItem(NOC_SETTINGS_KEY);
@@ -1046,6 +1051,7 @@ function updateNocSettings(){
     emailCc2: document.getElementById('noc_emailCc2').value.trim(),
     level1Threshold: Math.max(1, parseInt(document.getElementById('noc_level1Threshold').value,10) || 10),
     level2Threshold: Math.max(1, parseInt(document.getElementById('noc_level2Threshold').value,10) || 25),
+    activeBaseline: Math.max(0, parseInt(document.getElementById('noc_activeBaseline').value,10) || 0),
     emailServiceId: document.getElementById('noc_emailServiceId').value.trim(),
     emailTemplateId: document.getElementById('noc_emailTemplateId').value.trim(),
     emailPublicKey: document.getElementById('noc_emailPublicKey').value.trim()
@@ -1093,12 +1099,25 @@ function loadNocSettingsIntoUI(){
   const el10c = document.getElementById('noc_emailCc2'); if(el10c) el10c.value = s.emailCc2;
   const el11 = document.getElementById('noc_level1Threshold'); if(el11) el11.value = s.level1Threshold;
   const el12 = document.getElementById('noc_level2Threshold'); if(el12) el12.value = s.level2Threshold;
+  const el12b = document.getElementById('noc_activeBaseline'); if(el12b) el12b.value = s.activeBaseline || '';
   toggleNocEmailFields();
 }
 function toggleNocEmailFields(){
   const cb = document.getElementById('noc_emailEnabled');
   const box = document.getElementById('noc_email_fields');
   if(cb && box) box.style.display = cb.checked ? '' : 'none';
+}
+// Sets the active-gateway baseline from whatever is currently synced into
+// Live Coverage, so alert-threshold percentages are computed against your
+// real operating baseline instead of the full fleet (which may include a
+// large chunk of gateways that are never expected to be online at once).
+function recalcActiveBaseline(){
+  const activeCount = state.live.gateways.filter(g => g.status === 'active').length;
+  const el = document.getElementById('noc_activeBaseline');
+  if(el) el.value = activeCount;
+  updateNocSettings();
+  const statusEl = document.getElementById('noc_alertStatus');
+  if(statusEl) statusEl.textContent = `Active baseline set to ${activeCount} (current active gateway count).`;
 }
 function updateSyncAgeIndicator(){
   const el = document.getElementById('live_syncAgeIndicator');
