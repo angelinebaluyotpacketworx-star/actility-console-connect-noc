@@ -937,10 +937,12 @@ function flushNocInactiveBatch(){
   // HTML, where plain newlines wouldn't render as line breaks.
   const emailBody = severity >= 1
     ? `We are currently experiencing a mass gateway outage affecting multiple sites and gateway connections.<br>`
+      + `Number of gateways currently down: ${batch.length}${pctLabel}<br><br>`
       + `Please monitor your NOC Dashboard for the latest gateway status and updates.<br><br>`
       + `Thank you for your patience and understanding.<br>`
       + `– Network Operations Center (NOC)`
     : `We are currently experiencing a small gateway outage affecting multiple sites and gateway connections.<br>`
+      + `Number of gateways currently down: ${batch.length}${pctLabel}<br><br>`
       + `Please monitor your NOC Dashboard for the latest gateway status and updates.<br><br>`
       + `Thank you for your patience and understanding.<br>`
       + `– Network Operations Center (NOC)`;
