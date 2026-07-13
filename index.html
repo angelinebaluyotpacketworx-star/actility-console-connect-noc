@@ -760,8 +760,12 @@
         <div id="noc_email_fields" style="display:none;">
           <label>Email 1 -- small/normal outages</label>
           <input id="noc_emailTo" placeholder="noc-team@yourcompany.com" onchange="updateNocSettings()">
+          <label>Email 1 CC (optional)</label>
+          <input id="noc_emailCc" placeholder="cc-recipient@yourcompany.com" onchange="updateNocSettings()">
           <label>Email 2 -- mass-outage escalation (optional)</label>
           <input id="noc_emailTo2" placeholder="noc-manager@yourcompany.com" onchange="updateNocSettings()">
+          <label>Email 2 CC (optional)</label>
+          <input id="noc_emailCc2" placeholder="cc-recipient@yourcompany.com" onchange="updateNocSettings()">
           <div class="row2">
             <div><label>Level 1 threshold (% of fleet down at once)</label><input id="noc_level1Threshold" type="number" min="1" max="100" step="1" value="10" onchange="updateNocSettings()"></div>
             <div><label>Level 2 threshold (% critical)</label><input id="noc_level2Threshold" type="number" min="1" max="100" step="1" value="25" onchange="updateNocSettings()"></div>
@@ -776,7 +780,7 @@
           <label>EmailJS Public Key</label>
           <input id="noc_emailPublicKey" placeholder="e.g. AbCdEfGhIjKlMnOp" onchange="updateNocSettings()">
           <div class="caveat">
-            <b>Template variables:</b> in your EmailJS email template, use placeholders <code>{{to_email}}</code>, <code>{{subject}}</code>, <code>{{message}}</code>, and <code>{{time}}</code> -- this tool fills them in on every alert. Free EmailJS accounts cap at 200 emails/month. Gateway+SIM diagnosis alerts (Backhaul/Billing/Traffic) always go to Email 1 -- the escalation tier only applies to "N gateways went inactive" events.
+            <b>Template variables:</b> in your EmailJS email template, use placeholders <code>{{to_email}}</code>, <code>{{subject}}</code>, <code>{{message}}</code>, and <code>{{time}}</code> -- this tool fills them in on every alert. For CC, this tool also sends a <code>{{cc_email}}</code> variable (blank if you leave the CC field empty) -- open your template's <b>Settings</b> tab (not Content) and set the <b>Cc</b> field to <code>{{cc_email}}</code> so it picks it up. Free EmailJS accounts cap at 200 emails/month. Gateway+SIM diagnosis alerts (Backhaul/Billing/Traffic) always go to Email 1 -- the escalation tier only applies to "N gateways went inactive" events.
           </div>
         </div>
 
@@ -995,7 +999,7 @@ function checkDiagnosisAlerts(){
 
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
-const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailTo2:'', level1Threshold:10, level2Threshold:25, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
 function getNocSettings(){
   try{
     const raw = localStorage.getItem(NOC_SETTINGS_KEY);
@@ -1043,7 +1047,9 @@ function updateNocSettings(){
     webhookUrl: document.getElementById('noc_webhookUrl').value.trim(),
     emailEnabled: document.getElementById('noc_emailEnabled').checked,
     emailTo: document.getElementById('noc_emailTo').value.trim(),
+    emailCc: document.getElementById('noc_emailCc').value.trim(),
     emailTo2: document.getElementById('noc_emailTo2').value.trim(),
+    emailCc2: document.getElementById('noc_emailCc2').value.trim(),
     level1Threshold: Math.max(1, parseInt(document.getElementById('noc_level1Threshold').value,10) || 10),
     level2Threshold: Math.max(1, parseInt(document.getElementById('noc_level2Threshold').value,10) || 25),
     emailServiceId: document.getElementById('noc_emailServiceId').value.trim(),
@@ -1089,6 +1095,8 @@ function loadNocSettingsIntoUI(){
   const el8 = document.getElementById('noc_emailTemplateId'); if(el8) el8.value = s.emailTemplateId;
   const el9 = document.getElementById('noc_emailPublicKey'); if(el9) el9.value = s.emailPublicKey;
   const el10 = document.getElementById('noc_emailTo2'); if(el10) el10.value = s.emailTo2;
+  const el10b = document.getElementById('noc_emailCc'); if(el10b) el10b.value = s.emailCc;
+  const el10c = document.getElementById('noc_emailCc2'); if(el10c) el10c.value = s.emailCc2;
   const el11 = document.getElementById('noc_level1Threshold'); if(el11) el11.value = s.level1Threshold;
   const el12 = document.getElementById('noc_level2Threshold'); if(el12) el12.value = s.level2Threshold;
   toggleNocEmailFields();
@@ -1130,10 +1138,13 @@ function fireNocAlert(msg, tsIso, severity, emailBody){
       body: JSON.stringify({ text: `${msg}\nTime: ${new Date(tsIso||Date.now()).toLocaleString()}` })
     }).catch(err => console.warn('Webhook alert failed', err));
   }
-  const targetEmail = (severity >= 1 && s.emailTo2) ? s.emailTo2 : s.emailTo;
+  const isMassTier = severity >= 1 && s.emailTo2;
+  const targetEmail = isMassTier ? s.emailTo2 : s.emailTo;
+  const ccEmail = isMassTier ? s.emailCc2 : s.emailCc;
   if(s.emailEnabled && s.emailServiceId && s.emailTemplateId && s.emailPublicKey && targetEmail && window.emailjs){
     emailjs.send(s.emailServiceId, s.emailTemplateId, {
       to_email: targetEmail,
+      cc_email: ccEmail || '',
       subject: sevLabel,
       message: emailBody || msg,
       time: new Date(tsIso||Date.now()).toLocaleString()
