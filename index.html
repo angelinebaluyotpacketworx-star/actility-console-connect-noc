@@ -927,6 +927,13 @@ function flushNocInactiveBatch(){
   const level1 = s.level1Threshold;
   const level2 = Math.max(s.level2Threshold, level1);
   const severity = percentDown >= level2 ? 2 : percentDown >= level1 ? 1 : 0;
+  // Below the Level 1 threshold, this batch doesn't rise to an outage alert
+  // at all -- the individual gateway(s) still show up in Recent Status
+  // Changes / Currently Down (recordStatusChange() already logged them
+  // regardless of this function), but no email/webhook/desktop notification
+  // fires for it. This is what makes the Level 1 threshold an actual floor
+  // instead of just a label.
+  if(severity === 0) return;
   const shown = batch.slice(0, 10).map(b => b.name + (b.site ? ' (' + b.site + ')' : '')).join(', ');
   const extra = batch.length > 10 ? `, +${batch.length - 10} more` : '';
   const pctLabel = total > 0 ? ` (${percentDown.toFixed(1)}% of baseline)` : '';
@@ -934,18 +941,14 @@ function flushNocInactiveBatch(){
   // Slack/Teams webhook, which render raw text (not the formatted email).
   const msg = severity === 2
     ? `⚠ CRITICAL (Level 2): ${batch.length} gateways went inactive at once${pctLabel} -- ${shown}${extra}`
-    : severity === 1
-      ? `⚠ Level 1 outage: ${batch.length} gateways went inactive at once${pctLabel} -- ${shown}${extra}`
-      : batch.length === 1
-        ? `⚠ Gateway went inactive: ${shown}`
-        : `⚠ ${batch.length} gateways went inactive: ${shown}${extra}`;
-  // NOC-approved customer-facing email body (short form, per NOC team
-  // review) -- "small outage" wording for severity 0 (Email 1) and "mass
-  // outage" wording for severity 1/2 (Email 2). Uses <br> instead of \n
-  // since EmailJS substitutes {{message}} directly into the template's raw
-  // HTML, where plain newlines wouldn't render as line breaks.
+    : `⚠ Level 1 outage: ${batch.length} gateways went inactive at once${pctLabel} -- ${shown}${extra}`;
+  // NOC-approved customer-facing email body -- severity 1 (Level 1, between
+  // the two thresholds) is "Minor Gateway Outage" to Email 1; severity 2
+  // (at/above Level 2) is "Major Gateway Outage" to Email 2. Uses <br>
+  // instead of \n since EmailJS substitutes {{message}} directly into the
+  // template's raw HTML, where plain newlines wouldn't render as line breaks.
   const gatewayCountLine = `Number of gateways currently down: <strong>${batch.length}</strong>${pctLabel}`;
-  const emailBody = severity >= 1
+  const emailBody = severity === 2
     ? `<strong>🔴 Major Gateway Outage</strong><br><br>`
       + `A major gateway outage is currently in progress, affecting multiple sites. NOC personnel are advised to immediately check the NOC Dashboard and closely monitor all affected gateways until service is restored.<br><br>`
       + `${gatewayCountLine}`
@@ -1149,9 +1152,9 @@ function fireNocAlert(msg, tsIso, severity, emailBody){
       body: JSON.stringify({ text: `${msg}\nTime: ${new Date(tsIso||Date.now()).toLocaleString()}` })
     }).catch(err => console.warn('Webhook alert failed', err));
   }
-  const isMassTier = severity >= 1 && s.emailTo2;
-  const targetEmail = isMassTier ? s.emailTo2 : s.emailTo;
-  const ccEmail = isMassTier ? s.emailCc2 : s.emailCc;
+  const isMajorTier = severity === 2 && s.emailTo2;
+  const targetEmail = isMajorTier ? s.emailTo2 : s.emailTo;
+  const ccEmail = isMajorTier ? s.emailCc2 : s.emailCc;
   if(s.emailEnabled && s.emailServiceId && s.emailTemplateId && s.emailPublicKey && targetEmail && window.emailjs){
     emailjs.send(s.emailServiceId, s.emailTemplateId, {
       to_email: targetEmail,
@@ -2285,6 +2288,21 @@ function loadSample(tab){
 // Docs: https://docs.thingpark.com/thingpark-enterprise/latest/docs/api-subscriber/control-plane/quickstart
 const TPW_CREDS_KEY = 'tpw_creds_v1';
 const TPW_LAST_SYNC_KEY = 'tpw_last_sync_v1';
+// ============ INTERNAL-SERVER BUILD: baked-in ThingPark defaults ============
+// Fill these in before deploying to your OWN restricted/internal server, so
+// every teammate who opens this page gets ThingPark credentials pre-filled
+// automatically -- no per-browser setup needed.
+// SECURITY WARNING: this is a static HTML file with no backend. Anyone who
+// can load this page can read these values via "View Source" or browser
+// DevTools. Only bake real credentials in here if this file is hosted
+// somewhere NOT reachable from the public internet (VPN-only / intranet /
+// behind your own login wall). Never do this on a publicly reachable URL
+// like the current Vercel deployment.
+const THINGPARK_BUILTIN_DEFAULT = {
+  host: '',         // e.g. 'community.thingpark.io'
+  clientId: '',     // e.g. 'sub-199983788/my-app'
+  clientSecret: ''  // ThingPark OAuth2 client secret
+};
 
 function tpwUpdateLastSyncDisplay(){
   const el = document.getElementById('tpw_lastSync');
@@ -2302,12 +2320,16 @@ function tpwLog(msg, append){
 function loadTpwCreds(){
   try{
     const raw = localStorage.getItem(TPW_CREDS_KEY);
-    if(!raw) return;
-    const c = JSON.parse(raw);
+    const stored = raw ? JSON.parse(raw) : {};
+    // Baked-in defaults (THINGPARK_BUILTIN_DEFAULT) are used for any field
+    // not already saved in this browser's localStorage -- a per-device
+    // "Remember on this device" save always wins over the shared default,
+    // so anyone who saves their own credentials locally isn't overridden.
+    const c = Object.assign({}, THINGPARK_BUILTIN_DEFAULT, stored);
     document.getElementById('tpw_host').value = c.host || '';
     document.getElementById('tpw_clientid').value = c.clientId || '';
     document.getElementById('tpw_clientsecret').value = c.clientSecret || '';
-    document.getElementById('tpw_remember').checked = true;
+    document.getElementById('tpw_remember').checked = !!raw || !!(THINGPARK_BUILTIN_DEFAULT.host && THINGPARK_BUILTIN_DEFAULT.clientId);
   }catch(e){}
 }
 function saveTpwCreds(host, clientId, clientSecret, remember){
@@ -2975,6 +2997,18 @@ async function syncFromThingPark(){
 const CC_CREDS_KEY = 'cc_creds_v2';
 const CC_LAST_SYNC_KEY = 'cc_last_sync_v1';
 const CC_SPIKE_KEY = 'cc_spike_threshold_mb_v1';
+// ============ INTERNAL-SERVER BUILD: baked-in Console Connect defaults ====
+// Same idea as THINGPARK_BUILTIN_DEFAULT above -- fill in before deploying
+// to your own restricted/internal server. Same security warning applies:
+// do NOT bake real credentials into a file hosted on a publicly reachable
+// URL. This block is safe to ship empty (default, current behavior).
+const CONSOLE_CONNECT_BUILTIN_DEFAULT = {
+  host: '',          // e.g. 'api.consoleconnect.com'
+  clientId: '',      // OAuth2 client_id
+  enterpriseId: '',  // organizationID
+  username: '',      // OAuth2 username
+  password: ''       // OAuth2 password
+};
 
 function ccLog(msg, append){
   const el = document.getElementById('cc_status');
@@ -2993,14 +3027,16 @@ function loadCcCreds(){
     const thresh = localStorage.getItem(CC_SPIKE_KEY);
     if(thresh !== null) document.getElementById('cc_spike_threshold').value = thresh;
     const raw = localStorage.getItem(CC_CREDS_KEY);
-    if(!raw) return;
-    const c = JSON.parse(raw);
+    const stored = raw ? JSON.parse(raw) : {};
+    // Same merge pattern as ThingPark: baked-in defaults fill in any field
+    // not already saved locally, and a per-device save always wins.
+    const c = Object.assign({}, CONSOLE_CONNECT_BUILTIN_DEFAULT, stored);
     document.getElementById('cc_host').value = c.host || '';
     document.getElementById('cc_client_id').value = c.clientId || '';
     document.getElementById('cc_enterprise_id').value = c.enterpriseId || '';
     document.getElementById('cc_username').value = c.username || '';
     document.getElementById('cc_password').value = c.password || '';
-    document.getElementById('cc_remember').checked = true;
+    document.getElementById('cc_remember').checked = !!raw || !!(CONSOLE_CONNECT_BUILTIN_DEFAULT.host && CONSOLE_CONNECT_BUILTIN_DEFAULT.clientId);
   }catch(e){}
 }
 function saveCcCreds(host, clientId, enterpriseId, username, password, remember){
@@ -3851,8 +3887,14 @@ function switchTab(tab){
   filterEnvOptions('planning');
   loadTpwCreds();
   tpwUpdateLastSyncDisplay();
+  if(THINGPARK_BUILTIN_DEFAULT.host && THINGPARK_BUILTIN_DEFAULT.clientId){
+    tpwLog('Using pre-configured team ThingPark credentials for this deployment. Click "Sync gateways from ThingPark" to pull data.');
+  }
   loadCcCreds();
   ccUpdateLastSyncDisplay();
+  if(CONSOLE_CONNECT_BUILTIN_DEFAULT.host && CONSOLE_CONNECT_BUILTIN_DEFAULT.clientId){
+    ccLog('Using pre-configured team Console Connect credentials for this deployment.');
+  }
   loadStatusHistory();
   loadNocSettingsIntoUI();
   applyNocAutoSync();
