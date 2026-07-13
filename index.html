@@ -1146,6 +1146,7 @@ function fireNocAlert(msg, tsIso, severity, emailBody){
       to_email: targetEmail,
       cc_email: ccEmail || '',
       subject: sevLabel,
+      name: 'LoRaWAN NOC Monitoring System',
       message: emailBody || msg,
       time: new Date(tsIso||Date.now()).toLocaleString()
     }, { publicKey: s.emailPublicKey }).catch(err => console.warn('EmailJS alert failed', err));
@@ -1183,7 +1184,9 @@ async function testNocWebhook(){
       if(s.emailTo){
         try{
           await emailjs.send(s.emailServiceId, s.emailTemplateId, {
-            to_email: s.emailTo, subject: 'LoRaWAN NOC Test Alert (Email 1)',
+            to_email: s.emailTo, cc_email: s.emailCc || '',
+            subject: 'LoRaWAN NOC Test Alert (Email 1)',
+            name: 'LoRaWAN NOC Monitoring System',
             message: '✅ Test alert — this is where small/normal outage alerts go.',
             time: new Date().toLocaleString()
           }, { publicKey: s.emailPublicKey });
@@ -1197,7 +1200,9 @@ async function testNocWebhook(){
       if(s.emailTo2){
         try{
           await emailjs.send(s.emailServiceId, s.emailTemplateId, {
-            to_email: s.emailTo2, subject: 'LoRaWAN NOC Test Alert (Email 2 — escalation)',
+            to_email: s.emailTo2, cc_email: s.emailCc2 || '',
+            subject: 'LoRaWAN NOC Test Alert (Email 2 — escalation)',
+            name: 'LoRaWAN NOC Monitoring System',
             message: `✅ Test alert — this is where Level 1 (${s.level1Threshold}%+ of fleet down at once) and Level 2 -- critical (${s.level2Threshold}%+ of fleet) alerts go.`,
             time: new Date().toLocaleString()
           }, { publicKey: s.emailPublicKey });
