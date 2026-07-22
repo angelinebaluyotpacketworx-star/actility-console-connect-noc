@@ -3068,20 +3068,25 @@ function ccGetSpikeThreshold(){
 // (observed live values: "Active", "Paused") into the app's three-way
 // active/inactive/unknown model. Extra synonyms are included defensively
 // since the live API's exact vocabulary isn't confirmed.
+// Confirmed against Console Connect's official IoT API field reference:
+// `simSubscriptionStatus` is an optional enum with exactly four values --
+// Active, Deactivated, Pause, Terminated (note: "Pause", not "Paused").
 function ccMapSimState(raw){
   const s = String(raw || '').trim().toUpperCase();
   if(!s) return 'unknown';
   if(s === 'ACTIVE') return 'active';
-  if(['PAUSED','SUSPENDED','INACTIVE','TERMINATED','DEACTIVATED','DISABLED','BLOCKED'].includes(s)) return 'inactive';
+  if(['PAUSE','PAUSED','SUSPENDED','INACTIVE','TERMINATED','DEACTIVATED','DISABLED','BLOCKED'].includes(s)) return 'inactive';
   return 'unknown';
 }
 
-// Probes several plausible response shapes for a SIM/subscription lookup --
-// unconfirmed against a live Console Connect response (see caveat above).
+// Probes several plausible response shapes for a SIM/subscription lookup.
+// `simSubscriptionStatus` is checked first since it's the confirmed real
+// field name from Console Connect's official API docs; the rest remain as
+// fallbacks in case a given endpoint response shape differs.
 function ccExtractSimFields(json){
   if(!json) return null;
   const rec = json.data || json.subscription || json.result || json;
-  const stateRaw = rec.state ?? rec.status ?? rec.subscriptionState ?? rec.simState ?? rec.State;
+  const stateRaw = rec.simSubscriptionStatus ?? rec.state ?? rec.status ?? rec.subscriptionState ?? rec.simState ?? rec.State;
   const imsi = rec.imsi ?? rec.IMSI ?? '';
   const msisdn = rec.msisdn ?? rec.MSISDN ?? '';
   const label = rec.label ?? rec.name ?? rec.Label ?? '';
