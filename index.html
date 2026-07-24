@@ -824,19 +824,23 @@ const ENV_LABEL = {
 const OUTDOOR_ENVS = ['open','coastal','mixed','dense','forest'];
 const INDOOR_ENVS = ['warehouse','office','residential'];
 
+// Free-space path loss (dB) at distance dKm, frequency fMhz -- the log-distance model's reference loss.
 function fspl(dKm, fMhz){ return 20*Math.log10(dKm) + 20*Math.log10(fMhz) + 32.44; }
 const PL_D0 = fspl(D0_M/1000, FREQ_MHZ);
+// Picks the base outdoor/indoor propagation model for a gateway and applies its environment's path-loss exponent adjustment.
 function effectiveModel(gw){
   const base = gw.type === 'indoor' ? INDOOR : OUTDOOR;
   const adj = ENV_ADJ[gw.env || 'mixed'] || 1.0;
   return { maxRange: base.maxRange, n: base.n * adj };
 }
+// Estimated received signal strength (dBm) at distance dM from a gateway, using its effective propagation model.
 function rssiAt(gw, dM){
   const mdl = effectiveModel(gw);
   dM = Math.max(dM, D0_M);
   const pl = PL_D0 + 10*mdl.n*Math.log10(dM/D0_M);
   return EIRP_DBM - pl;
 }
+// Maps an RSSI value to a coverage-strength color band for the map overlay (null = no signal / out of range).
 function rssiColor(rssi){
   if(rssi >= -50)  return '#1a7332';
   if(rssi >= -70)  return '#2ecc40';
@@ -872,6 +876,7 @@ function formatDuration(ms){
   const remHrs = hrs % 24;
   return `${days}d ${remHrs}h`;
 }
+// Renders an ISO timestamp as a relative "Xm/Xh/Xd ago" string.
 function formatAgo(iso){
   if(!iso) return null;
   const t = new Date(iso).getTime();
@@ -884,10 +889,12 @@ function formatAgo(iso){
 // edit), we log a timestamped entry so the NOC can see downtime duration,
 // flapping gateways, and a change feed -- not just the current snapshot.
 const NOC_HISTORY_KEY = 'live_status_history_v1';
+// Persists the live-tab status-change history (capped at 500 entries) to localStorage.
 function saveStatusHistory(){
   try{ localStorage.setItem(NOC_HISTORY_KEY, JSON.stringify(state.live.statusHistory.slice(0,500))); }
   catch(e){ console.warn('Could not save status history', e); }
 }
+// Restores the live-tab status-change history from localStorage on page load.
 function loadStatusHistory(){
   try{
     const raw = localStorage.getItem(NOC_HISTORY_KEY);
@@ -899,6 +906,7 @@ function loadStatusHistory(){
 // gateway, we batch them here and flushNocInactiveBatch() below turns the
 // whole batch into a single alert, escalated by size.
 let _nocBatchInactive = [];
+// Logs a timestamped status-change entry when a gateway's status actually flips, and queues newly-inactive gateways into the outage-alert batch.
 function recordStatusChange(gw, fromStatus, toStatus){
   fromStatus = fromStatus || 'unknown';
   toStatus = toStatus || 'unknown';
@@ -980,6 +988,7 @@ function nocMetaSuffix(gw){
 // entries fall out naturally since we only add keys for gateways currently
 // flagged.
 const _nocDiagAlerted = new Set();
+// Re-scans all live gateways for a Backhaul/Billing/Traffic diagnosis and fires an alert for any newly-flagged one (see _nocDiagAlerted above).
 function checkDiagnosisAlerts(){
   if(typeof computeDiagnosis !== 'function') return;
   const stillFlagged = new Set();
@@ -1000,6 +1009,7 @@ function checkDiagnosisAlerts(){
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
 const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, activeBaseline:0, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
+// Reads saved NOC settings from localStorage, merged over the defaults so newly added settings fields don't break old saved data.
 function getNocSettings(){
   try{
     const raw = localStorage.getItem(NOC_SETTINGS_KEY);
@@ -1007,8 +1017,10 @@ function getNocSettings(){
   }catch(e){}
   return Object.assign({}, NOC_SETTINGS_DEFAULT);
 }
+// Persists the full NOC settings object to localStorage.
 function saveNocSettingsObj(s){ try{ localStorage.setItem(NOC_SETTINGS_KEY, JSON.stringify(s)); }catch(e){} }
 let _nocAutoSyncTimer = null;
+// (Re)starts the auto-sync timer per the saved interval, re-running ThingPark (and optionally Console Connect) sync on schedule.
 function applyNocAutoSync(){
   if(_nocAutoSyncTimer){ clearInterval(_nocAutoSyncTimer); _nocAutoSyncTimer = null; }
   const s = getNocSettings();
@@ -1037,6 +1049,7 @@ function applyNocAutoSync(){
     }, mins*60000);
   }
 }
+// Reads every NOC settings field from the UI, saves it, and re-applies auto-sync + re-renders the settings UI.
 function updateNocSettings(){
   const s = {
     autoSyncEnabled: document.getElementById('noc_autoSyncEnabled').checked,
@@ -1081,6 +1094,7 @@ function updateAutoSyncSetting(source){
   applyNocAutoSync();
   loadNocSettingsIntoUI();
 }
+// Populates every NOC settings input field from the saved settings object (mirror of updateNocSettings).
 function loadNocSettingsIntoUI(){
   const s = getNocSettings();
   const el1 = document.getElementById('noc_autoSyncEnabled'); if(el1) el1.checked = s.autoSyncEnabled;
@@ -1103,6 +1117,7 @@ function loadNocSettingsIntoUI(){
   const el12b = document.getElementById('noc_activeBaseline'); if(el12b) el12b.value = s.activeBaseline || '';
   toggleNocEmailFields();
 }
+// Shows/hides the email-alert config fields based on the "enable email alerts" checkbox.
 function toggleNocEmailFields(){
   const cb = document.getElementById('noc_emailEnabled');
   const box = document.getElementById('noc_email_fields');
@@ -1120,6 +1135,7 @@ function recalcActiveBaseline(){
   const statusEl = document.getElementById('noc_alertStatus');
   if(statusEl) statusEl.textContent = `Active baseline set to ${activeCount} (current active gateway count).`;
 }
+// Updates the "synced Xm ago" indicator next to the ThingPark sync button, flagging it as stale past 20 minutes.
 function updateSyncAgeIndicator(){
   const el = document.getElementById('live_syncAgeIndicator');
   if(!el) return;
@@ -1166,6 +1182,7 @@ function fireNocAlert(msg, tsIso, severity, emailBody){
     }, { publicKey: s.emailPublicKey }).catch(err => console.warn('EmailJS alert failed', err));
   }
 }
+// Manually fires a test alert (desktop notification / webhook / email) using the currently saved settings, to verify the alert pipeline without waiting for a real outage.
 async function testNocWebhook(){
   const s = getNocSettings();
   const statusEl = document.getElementById('noc_alertStatus');
@@ -1247,6 +1264,7 @@ function exportFullBackup(){
   a.download = `lorawan_noc_backup_${ts}.json`;
   a.click();
 }
+// Restores a full JSON backup (Live gateways, Planning sites, status history) exported via the backup download button, overwriting current data after confirmation.
 function importFullBackup(e){
   const file = e.target.files[0];
   if(!file) return;
@@ -1518,6 +1536,7 @@ function toggleNocHistorySection(){
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
 }
+// Clears a tab's search box and re-renders.
 function clearSearch(tab){
   document.getElementById(tab + '_search').value = '';
   renderList(tab); renderMap(tab);
@@ -1529,6 +1548,7 @@ function debouncedRenderTab(tab){
   clearTimeout(_tpwDebounceTimers[tab]);
   _tpwDebounceTimers[tab] = setTimeout(() => { renderList(tab); renderMap(tab); }, 250);
 }
+// Renders the per-site filter chip row for a tab, based on distinct site values currently in its gateway list.
 function renderSiteChips(tab){
   const sites = new Set(state[tab].gateways.map(g => g.site || '(no site)'));
   const chipsEl = document.getElementById(tab + '_site_chips');
@@ -1539,6 +1559,7 @@ function renderSiteChips(tab){
     return `<span class="chip ${active?'active':''}" onclick="toggleSite('${tab}','${s.replace(/'/g,"\\'")}')">${s}</span>`;
   }).join('');
 }
+// Toggles a site on/off in the active site filter and re-renders.
 function toggleSite(tab, site){
   const s = state[tab].activeSites;
   if(s.has(site)) s.delete(site); else s.add(site);
@@ -1552,6 +1573,7 @@ function toggleSite(tab, site){
 // while the search text doesn't match it, so applying a filter then typing
 // something else never silently drops it.
 const CHIP_SEARCH_LIMIT = 40;
+// Renders the RF Region filter chip row, narrowed by the region search box so large channel-plan lists stay usable.
 function renderRfRegionChips(tab){
   const chipsEl = document.getElementById(tab + '_rfregion_chips');
   if(state[tab].gateways.length === 0){ chipsEl.innerHTML=''; return; }
@@ -1568,6 +1590,7 @@ function renderRfRegionChips(tab){
     return `<span class="chip ${active?'active':''}" onclick="toggleRfRegion('${tab}','${r.replace(/'/g,"\\'")}')">${r}</span>`;
   }).join('') + (extra > 0 ? `<div style="font-size:10px;color:var(--sub);width:100%;margin-top:4px;">+${extra} more — narrow your search</div>` : '');
 }
+// Toggles an RF Region on/off in the active filter and re-renders.
 function toggleRfRegion(tab, region){
   const s = state[tab].activeRfRegions;
   if(s.has(region)) s.delete(region); else s.add(region);
@@ -1601,6 +1624,7 @@ function renderTagChips(tab){
     return `<span class="chip ${active?'active':''}" onclick="toggleTag('${tab}','${t.replace(/'/g,"\\'")}')">${t}</span>`;
   }).join('') + (extra > 0 ? `<div style="font-size:10px;color:var(--sub);width:100%;margin-top:4px;">+${extra} more — narrow your search</div>` : '');
 }
+// Toggles a tag on/off in the active tag filter and re-renders.
 function toggleTag(tab, tag){
   const s = state[tab].activeTags;
   if(s.has(tag)) s.delete(tag); else s.add(tag);
@@ -1900,19 +1924,23 @@ function renderEditForm(tab, gw, i){
     </div>
   </div>`;
 }
+// Repopulates the Environment dropdown in the edit form when Type (indoor/outdoor) changes, since each type has its own environment options.
 function rewriteEditEnv(i, type){
   const envs = type === 'indoor' ? INDOOR_ENVS : OUTDOOR_ENVS;
   const envEl = document.getElementById('edit_env_'+i);
   envEl.innerHTML = envs.map(e => `<option value="${e}">${ENV_LABEL[e]}</option>`).join('');
 }
+// Opens the inline edit form for a gateway row.
 function startEdit(tab, i){
   state[tab].editingIdx = i;
   renderList(tab);
 }
+// Closes the inline edit form without saving.
 function cancelEdit(tab){
   state[tab].editingIdx = -1;
   renderList(tab);
 }
+// Writes the inline edit form's fields back onto the gateway, logging a status-change entry if status changed.
 function saveEdit(tab, i){
   const g = state[tab].gateways[i];
   const prevStatus = g.status;
@@ -1960,6 +1988,7 @@ function toggleMeasure(tab){
     s.measureLayers = [];
   }
 }
+// Handles a map click while measure mode is active: drops a point, and once two points exist, draws a line labeled with the distance between them.
 function handleMeasureClick(tab, latlng){
   const s = state[tab];
   s.measurePoints.push(latlng);
@@ -2005,6 +2034,7 @@ async function save(tab){
   try{ if(window.storage) await window.storage.set(state[tab].storageKey, JSON.stringify(state[tab].gateways)); }
   catch(e){ console.warn('Storage save failed', e); }
 }
+// Loads a tab's gateway list from the backend storage API, if configured.
 async function load(tab){
   try{
     if(window.storage){
@@ -2022,6 +2052,7 @@ async function load(tab){
 // 3. For each remaining candidate, compute new area covered if outdoor gateway placed there
 // 4. Return top N candidates, using greedy non-overlap to avoid stacking suggestions
 const SUGGEST_GATEWAY = { type:'outdoor', env:'mixed' }; // for range calc
+// Computes gap-fill site suggestions for the current map view by scoring a grid of candidate points against existing coverage.
 function runSuggest(){
   const map = state.planning.map;
   const bounds = map.getBounds();
@@ -2044,6 +2075,7 @@ function runSuggest(){
   // Score candidate = area within suggR that isn't already covered
   // Approximated by sampling ~50 points within candidate's coverage disk
   const N_SAMPLE = 50;
+  // Scores one candidate point by how much of its coverage disk isn't already covered by existing gateways.
   function score(lat, lon){
     if(isCovered(lat, lon, existing)) return 0; // don't place inside existing coverage
     let uncovered = 0;
@@ -2057,6 +2089,7 @@ function runSuggest(){
     }
     return uncovered / N_SAMPLE;
   }
+  // True if the given lat/lon already falls within any existing gateway's coverage radius.
   function isCovered(lat, lon, sources){
     for(const s of sources){
       if(haversineM(lat, lon, s.lat, s.lon) < s.r) return true;
@@ -2126,6 +2159,7 @@ function runSuggest(){
   state.planning._lastSuggest = picks;
 }
 
+// Turns a gap-fill suggestion into an actual Planning-tab gateway entry.
 function acceptSuggest(idx){
   const picks = state.planning._lastSuggest || [];
   const p = picks[idx];
@@ -2151,6 +2185,7 @@ function removeGateway(tab, i){
   state[tab].gateways.splice(i,1);
   renderList(tab); renderMap(tab); save(tab);
 }
+// Reads the "add gateway" form fields and appends a new gateway to the given tab's list.
 function addGateway(tab){
   const name = document.getElementById(tab + '_name').value.trim();
   const lrr = document.getElementById(tab + '_lrr').value.trim();
@@ -2186,6 +2221,7 @@ function exportCSV(tab){
   a.download = (tab==='live' ? 'live_gateways_export.csv' : 'planning_sites_export.csv');
   a.click();
 }
+// Imports gateways from a CSV export, upserting by LRR ID (or name if no LRR ID) so re-importing updates existing rows instead of duplicating them.
 function importCSV(tab, e){
   const file = e.target.files[0];
   if(!file) return;
@@ -2232,6 +2268,7 @@ function importCSV(tab, e){
   reader.readAsText(file);
   e.target.value = '';
 }
+// Minimal RFC 4180-style CSV parser (handles quoted fields containing commas/newlines).
 function parseCSV(text){
   const rows = [];
   let cur = [], field = '', inQuotes = false;
@@ -2252,6 +2289,7 @@ function parseCSV(text){
   if(field.length || cur.length){ cur.push(field); rows.push(cur); }
   return rows;
 }
+// Clears every gateway from a tab after confirmation.
 function clearAll(tab){
   if(state[tab].gateways.length === 0) return;
   const label = tab==='live' ? 'gateways' : 'proposed sites';
@@ -2265,6 +2303,7 @@ function clearAll(tab){
     renderList(tab); renderMap(tab); save(tab);
   }
 }
+// Loads a small hardcoded sample gateway set into Live Coverage, for demoing the app without real data.
 function loadSample(tab){
   state.live.gateways = [
     {name:"PICO-915-00189-Barangay Hall XIX-A-PWX", lrr:"10-00-02-64", site:"Victorias", rfRegion:"AS923-3", lat:10.876215, lon:123.060623, type:'outdoor', env:'mixed', status:'active', rssi:-80, notes:''},
@@ -2304,6 +2343,7 @@ const THINGPARK_BUILTIN_DEFAULT = {
   clientSecret: ''  // ThingPark OAuth2 client secret
 };
 
+// Updates the "Last synced" text next to the ThingPark sync button.
 function tpwUpdateLastSyncDisplay(){
   const el = document.getElementById('tpw_lastSync');
   if(!el) return;
@@ -2311,12 +2351,14 @@ function tpwUpdateLastSyncDisplay(){
   el.textContent = iso ? `Last synced: ${new Date(iso).toLocaleString()}` : 'Last synced: never';
 }
 
+// Writes to the ThingPark sync status log box (optionally appending instead of replacing).
 function tpwLog(msg, append){
   const el = document.getElementById('tpw_status');
   if(append) el.textContent += '\n' + msg;
   else el.textContent = msg;
 }
 
+// Populates the ThingPark credential fields from localStorage, falling back to any baked-in THINGPARK_BUILTIN_DEFAULT values.
 function loadTpwCreds(){
   try{
     const raw = localStorage.getItem(TPW_CREDS_KEY);
@@ -2332,6 +2374,7 @@ function loadTpwCreds(){
     document.getElementById('tpw_remember').checked = !!raw || !!(THINGPARK_BUILTIN_DEFAULT.host && THINGPARK_BUILTIN_DEFAULT.clientId);
   }catch(e){}
 }
+// Saves (or clears) the ThingPark credentials in localStorage based on the "remember on this device" checkbox.
 function saveTpwCreds(host, clientId, clientSecret, remember){
   if(remember){
     localStorage.setItem(TPW_CREDS_KEY, JSON.stringify({host, clientId, clientSecret}));
@@ -2385,6 +2428,7 @@ async function tpwDiscoverAuthPrefix(baseUrl){
   return { prefix: null, tokenPath: '/users-auth/protocol/openid-connect/token', fallbackTokenPath: null }; // last-resort default
 }
 
+// Convenience wrapper returning just the discovered token path from tpwDiscoverAuthPrefix.
 async function tpwDiscoverTokenPath(baseUrl){
   const { tokenPath } = await tpwDiscoverAuthPrefix(baseUrl);
   return tokenPath;
@@ -2457,6 +2501,7 @@ async function tpwTryTokenPath(tokenUrl, clientId, clientSecret){
   return { res, authMethodTried };
 }
 
+// Fetches an OAuth2 access token for ThingPark, trying the discovered auth path first and a fallback path if that fails outright.
 async function tpwGetToken(baseUrl, clientId, clientSecret){
   const { prefix, tokenPath, fallbackTokenPath } = await tpwDiscoverAuthPrefix(baseUrl);
   const tokenUrl = `${baseUrl}${tokenPath}`;
@@ -2516,6 +2561,7 @@ async function tpwAuthedFetch(url, tokenState, options){
   return res;
 }
 
+// Harvests the full base-station fleet despite the API's hard 100-result-per-page cap, by recursively partitioning the query on name prefix (see comments below).
 async function tpwFetchAllBaseStations(tokenState, onProgress){
   // This ThingPark deployment's partner-scoped bss endpoint hard-caps every
   // response at 100 results and silently ignores every pagination param
@@ -2589,6 +2635,7 @@ async function tpwFetchAllBaseStations(tokenState, onProgress){
     }
   }
 
+  // Merges a page of base-station briefs into the dedup map, keyed by LRR UUID/ID/name, and reports progress.
   function addBriefs(briefs){
     briefs.forEach(b => {
       const key = b.lrrUUID || b.lrrID || b.name;
@@ -2680,6 +2727,7 @@ async function tpwFetchAllBaseStations(tokenState, onProgress){
 // the actual coverage heatmap.
 const TPW_VALID_LAT_RANGE = [4, 21];
 const TPW_VALID_LON_RANGE = [116, 127];
+// Sanity-checks a lat/lon pair against the Philippines' bounding box, rejecting (0,0) and other clearly-wrong values before they pollute the coverage map.
 function tpwIsPlausibleLatLon(lat, lon){
   if(isNaN(lat) || isNaN(lon)) return false;
   if(lat === 0 && lon === 0) return false; // Null Island sentinel
@@ -2687,6 +2735,7 @@ function tpwIsPlausibleLatLon(lat, lon){
   if(lon < TPW_VALID_LON_RANGE[0] || lon > TPW_VALID_LON_RANGE[1]) return false;
   return true;
 }
+// Probes several plausible JSON shapes for a base station's GPS location, since the exact field path isn't documented.
 function tpwExtractLatLon(bs){
   const paths = [
     ['location', 'latitude', 'longitude'],
@@ -2813,6 +2862,7 @@ function tpwExtractLastSeen(bs){
 async function tpwMapWithConcurrency(items, limit, worker){
   const results = new Array(items.length);
   let nextIndex = 0;
+  // Pulls the next queued item and processes it; several of these run in parallel below to bound concurrency.
   async function runner(){
     while(true){
       const i = nextIndex++;
@@ -2828,6 +2878,7 @@ async function tpwMapWithConcurrency(items, limit, worker){
 
 const TPW_DETAIL_CONCURRENCY = 16;
 
+// Full ThingPark sync: logs in, fetches the base station list, fetches GPS/backhaul detail per station, and merges the result into Live Coverage.
 async function syncFromThingPark(){
   const hostRaw = document.getElementById('tpw_host').value.trim();
   const clientId = document.getElementById('tpw_clientid').value.trim();
@@ -3010,18 +3061,21 @@ const CONSOLE_CONNECT_BUILTIN_DEFAULT = {
   password: ''       // OAuth2 password
 };
 
+// Writes to the Console Connect status log box.
 function ccLog(msg, append){
   const el = document.getElementById('cc_status');
   if(!el) return;
   if(append) el.textContent += '\n' + msg;
   else el.textContent = msg;
 }
+// Updates the "Last synced" text next to the Console Connect sync button.
 function ccUpdateLastSyncDisplay(){
   const el = document.getElementById('cc_lastSync');
   if(!el) return;
   const iso = localStorage.getItem(CC_LAST_SYNC_KEY);
   el.textContent = iso ? `Last synced: ${new Date(iso).toLocaleString()}` : 'Last synced: never';
 }
+// Populates the Console Connect credential fields (and saved spike threshold) from localStorage, falling back to any baked-in CONSOLE_CONNECT_BUILTIN_DEFAULT values.
 function loadCcCreds(){
   try{
     const thresh = localStorage.getItem(CC_SPIKE_KEY);
@@ -3039,6 +3093,7 @@ function loadCcCreds(){
     document.getElementById('cc_remember').checked = !!raw || !!(CONSOLE_CONNECT_BUILTIN_DEFAULT.host && CONSOLE_CONNECT_BUILTIN_DEFAULT.clientId);
   }catch(e){}
 }
+// Saves (or clears) the Console Connect credentials in localStorage based on the "remember on this device" checkbox.
 function saveCcCreds(host, clientId, enterpriseId, username, password, remember){
   if(remember){
     localStorage.setItem(CC_CREDS_KEY, JSON.stringify({host, clientId, enterpriseId, username, password}));
@@ -3046,6 +3101,7 @@ function saveCcCreds(host, clientId, enterpriseId, username, password, remember)
     localStorage.removeItem(CC_CREDS_KEY);
   }
 }
+// Expands/collapses the Console Connect credentials section.
 function toggleCcSection(){
   const body = document.getElementById('cc_section_body');
   const btn = document.getElementById('cc_toggle_btn');
@@ -3053,11 +3109,13 @@ function toggleCcSection(){
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
 }
+// Saves the data-usage anomaly threshold (MB) used by computeDiagnosis's Traffic Anomaly check.
 function ccSaveSpikeThreshold(){
   const v = document.getElementById('cc_spike_threshold').value.trim();
   if(v === '') localStorage.removeItem(CC_SPIKE_KEY);
   else localStorage.setItem(CC_SPIKE_KEY, v);
 }
+// Reads the saved data-usage anomaly threshold, or null if not set.
 function ccGetSpikeThreshold(){
   const v = localStorage.getItem(CC_SPIKE_KEY);
   const n = v !== null && v !== '' ? parseFloat(v) : NaN;
@@ -3170,6 +3228,7 @@ async function ccLookupIccid(baseUrl, enterpriseId, iccid, token){
   return fields;
 }
 
+// Logs into Console Connect and looks up SIM status for every gateway with an ICCID, with limited concurrency.
 async function syncFromConsoleConnect(){
   const hostRaw = document.getElementById('cc_host').value.trim();
   const clientId = document.getElementById('cc_client_id').value.trim();
@@ -3329,6 +3388,7 @@ function computeDiagnosis(gw){
   }
   return null;
 }
+// Toggles the "only show diagnosed issues" filter on the gateway list.
 function toggleDiagFilter(tab){
   state[tab].activeDiagFilter = !state[tab].activeDiagFilter;
   renderList(tab); renderMap(tab);
@@ -3356,6 +3416,7 @@ const fpState = {
   storageKey: 'planning_floorplan_v1'
 };
 
+// Switches the Planning tab between its Outdoor Coverage and Floor Plan sub-modes.
 function switchSubmode(sub){
   document.querySelectorAll('.submode-tab').forEach(t => t.classList.toggle('active', t.dataset.submode === sub));
   document.getElementById('planning_outdoor_content').style.display = sub === 'outdoor' ? '' : 'none';
@@ -3369,6 +3430,7 @@ function switchSubmode(sub){
   }
 }
 
+// Loads an uploaded floor plan image and resets any prior calibration/gateways/walls for it.
 function handleFpUpload(e){
   const file = e.target.files[0];
   if(!file) return;
@@ -3394,6 +3456,7 @@ function handleFpUpload(e){
   e.target.value = '';
 }
 
+// Draws the floor plan canvas: background image, placed gateways with coverage circles, and walls.
 function renderFloorPlan(){
   const empty = document.getElementById('fp_empty');
   const canvas = document.getElementById('fp_canvas');
@@ -3665,6 +3728,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
+// Routes a click on the floor plan canvas based on the active tool: place a gateway, add a wall point, or add a calibration point.
 function handleFpClick(x, y){
   if(fpState.mode === 'place'){
     const name = document.getElementById('fp_gw_name').value.trim() || `GW-${fpState.gateways.length+1}`;
@@ -3684,6 +3748,7 @@ function handleFpClick(x, y){
   }
 }
 
+// Switches the floor plan's active tool (view/place/wall/calibrate) and updates cursor/toolbar state.
 function setFpMode(mode){
   fpState.mode = mode;
   document.querySelectorAll('.fp-tool-btn').forEach(b => b.classList.remove('active'));
@@ -3695,10 +3760,12 @@ function setFpMode(mode){
   if(mode === 'calibrate') fpState.calPoints = [];
   renderFloorPlan();
 }
+// Tool-button shortcuts for setFpMode().
 function startCalibration(){ setFpMode('calibrate'); }
 function startPlaceMode(){ setFpMode('place'); }
 function startWallMode(){ setFpMode('wall'); }
 
+// Shows a modal asking for the real-world distance between the two calibration points just clicked, to derive the floor plan's meters-per-pixel scale.
 function promptCalibrationDistance(){
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -3717,6 +3784,7 @@ function promptCalibrationDistance(){
   document.body.appendChild(overlay);
   setTimeout(() => document.getElementById('cal_dist_input').focus(), 50);
 }
+// Computes and stores meters-per-pixel from the entered real-world distance and the two calibration points' pixel distance.
 function applyCalibration(){
   const meters = parseFloat(document.getElementById('cal_dist_input').value);
   if(!meters || meters <= 0){ alert('Enter a positive distance in meters.'); return; }
@@ -3728,6 +3796,7 @@ function applyCalibration(){
   setFpMode('view');
   saveFloorPlan(); renderFloorPlan();
 }
+// Cancels an in-progress scale calibration without applying it.
 function cancelCalibration(){
   fpState.calPoints = [];
   document.querySelector('.modal-overlay').remove();
@@ -3735,6 +3804,7 @@ function cancelCalibration(){
   renderFloorPlan();
 }
 
+// Commits the wall currently being drawn (its accumulated points + selected material) to the floor plan.
 function finishWall(){
   if(fpState.wallPoints.length < 2) return;
   const material = document.getElementById('fp_wall_type').value;
@@ -3747,6 +3817,7 @@ function finishWall(){
   saveFloorPlan(); renderFloorPlan();
 }
 
+// Renders the sidebar list of placed gateways and walls on the floor plan.
 function renderFpList(){
   const listEl = document.getElementById('fp_list');
   const total = fpState.gateways.length + fpState.walls.length;
@@ -3771,12 +3842,14 @@ function renderFpList(){
   listEl.innerHTML = gwItems + wallItems;
 }
 
+// Removes a gateway or wall from the floor plan by id.
 function deleteFpItem(kind, id){
   if(kind === 'gw') fpState.gateways = fpState.gateways.filter(g => String(g.id) !== id);
   if(kind === 'wall') fpState.walls = fpState.walls.filter(w => String(w.id) !== id);
   saveFloorPlan(); renderFloorPlan();
 }
 
+// Persists the floor plan (image, scale, gateways, walls) to backend storage.
 async function saveFloorPlan(){
   try{
     if(window.storage){
@@ -3796,6 +3869,7 @@ async function saveFloorPlan(){
   }
 }
 
+// Restores the floor plan from backend storage on page load.
 async function loadFloorPlan(){
   try{
     if(window.storage){
@@ -3818,6 +3892,7 @@ async function loadFloorPlan(){
   }catch(e){}
 }
 
+// Downloads the current floor plan as a JSON file.
 function exportFloorPlan(){
   const payload = JSON.stringify({
     imageUrl: fpState.imageUrl,
@@ -3834,6 +3909,7 @@ function exportFloorPlan(){
   a.click();
 }
 
+// Loads a floor plan from a previously exported JSON file.
 function importFloorPlan(e){
   const file = e.target.files[0];
   if(!file) return;
@@ -3859,6 +3935,7 @@ function importFloorPlan(e){
   e.target.value = '';
 }
 
+// Clears the floor plan image, gateways, and walls after confirmation.
 function clearFloorPlan(){
   if(!confirm('Clear the floor plan, gateways, and walls? Export first if you need a backup.')) return;
   fpState.imageUrl = null;
