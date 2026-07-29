@@ -736,14 +736,12 @@
         </div>
         <div id="noc_projectTrends_section_body">
         <div class="info-box" style="border-left-color:var(--accent);">
-          Tracks active gateway count over time for: MSCP, Victorias City, Converge ICT, COGNIZANT, NAGA CITY, Concentrix, BCDA, JENTEC, SILIKON, UPRI. A snapshot is recorded automatically after every ThingPark sync (manual or auto-refresh). Toggle "Show total" to also plot each project's total tagged-gateway count as a dashed line -- the gap between a project's solid (active) and dashed (total) line at any point is a direct downtime signal for that project.
+          Tracks active gateway count over time for: MSCP, Victorias City, Converge ICT, COGNIZANT, NAGA CITY, Concentrix, BCDA, JENTEC, SILIKON, UPRI. One line per project, plotting its active-gateway count trend. A snapshot is recorded automatically after every ThingPark sync (manual or auto-refresh).
         </div>
-        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+        <label style="margin-top:2px;">Backend API URL (optional — shares snapshot history with the whole team instead of just this browser)</label>
+        <input id="noc_backend_url" placeholder="e.g. http://10.0.1.5:5000 (leave blank to store only in this browser)" onchange="saveNocBackendUrl()">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;margin-top:8px;">
           <button class="ghost-btn" style="max-width:200px;margin:0;" onclick="recordProjectSnapshot()">📸 Take snapshot now</button>
-          <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
-            <input type="checkbox" id="noc_projectShowTotal" style="width:auto;" onchange="renderProjectTrendsChart()">
-            <span style="font-size:11.5px;color:var(--sub);">Show total (for downtime comparison)</span>
-          </label>
           <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="clearProjectSnapshots()">Clear history</button>
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
@@ -1022,24 +1020,93 @@ function nocMetaSuffix(gw){
 // ============ NOC: PROJECT TREND SNAPSHOTS ============
 // Periodically records a timestamped snapshot of active vs. total gateway
 // count for each of the top project tags below, so trends can be reviewed
-// over time (not just the current instant) and downtime windows can be
-// spotted per project. Stored per-browser in localStorage -- same
-// limitation as status history above (not shared across the team until the
-// backend in the roadmap is wired in).
+// over time (not just the current instant). By default this is stored
+// per-browser in localStorage (same limitation as status history above);
+// setting a "Backend API URL" makes it shared across the whole team instead
+// via the small Flask/SQLite backend in backend/ (extend it with the
+// project_snapshots table -- see backend/schema.sql).
 const PROJECT_TAGS = ['MSCP', 'Victorias City', 'Converge ICT', 'COGNIZANT', 'NAGA CITY', 'Concentrix', 'BCDA', 'JENTEC', 'SILIKON', 'UPRI'];
 const PROJECT_SNAPSHOT_KEY = 'project_snapshot_history_v1';
 const PROJECT_SNAPSHOT_MAX = 5000; // ~52 days at one snapshot per 15 min (default auto-sync interval)
 const PROJECT_COLORS = ['#e6194B','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4','#f032e6','#bfef45','#e6beff','#469990'];
 
-function loadProjectSnapshots(){
+// ---- shared backend (optional) ----
+const NOC_BACKEND_KEY = 'noc_backend_url_v1';
+function getNocBackendUrl(){
+  try{ return (localStorage.getItem(NOC_BACKEND_KEY) || '').trim().replace(/\/+$/, ''); }catch(e){ return ''; }
+}
+function saveNocBackendUrl(){
+  const el = document.getElementById('noc_backend_url');
+  const val = el ? el.value.trim().replace(/\/+$/, '') : '';
+  try{
+    if(val) localStorage.setItem(NOC_BACKEND_KEY, val);
+    else localStorage.removeItem(NOC_BACKEND_KEY);
+  }catch(e){}
+  renderProjectTrendsChart();
+}
+function loadNocBackendUrl(){
+  const el = document.getElementById('noc_backend_url');
+  if(!el) return;
+  try{ el.value = localStorage.getItem(NOC_BACKEND_KEY) || ''; }catch(e){}
+}
+
+function loadLocalProjectSnapshots(){
   try{
     const raw = localStorage.getItem(PROJECT_SNAPSHOT_KEY);
     return raw ? JSON.parse(raw) : [];
   }catch(e){ return []; }
 }
-function saveProjectSnapshots(snapshots){
+function saveLocalProjectSnapshots(snapshots){
   try{ localStorage.setItem(PROJECT_SNAPSHOT_KEY, JSON.stringify(snapshots.slice(-PROJECT_SNAPSHOT_MAX))); }
   catch(e){ console.warn('Could not save project snapshot history', e); }
+}
+
+// Sends one snapshot to the shared backend (one row per project tag). The
+// backend already sends its own CORS headers (Flask-CORS), so this is a
+// plain fetch -- no proxy needed, unlike the third-party ThingPark/Console
+// Connect calls. Returns true on success so the caller can decide whether
+// it still needs the localStorage fallback.
+async function postProjectSnapshotToBackend(ts, counts){
+  const base = getNocBackendUrl();
+  if(!base) return false;
+  try{
+    const res = await fetch(`${base}/api/project-snapshots`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ts, counts })
+    });
+    return res.ok;
+  }catch(e){
+    console.warn('Project snapshot backend POST failed, keeping local copy only', e);
+    return false;
+  }
+}
+
+// Fetches snapshot history from the backend (optionally since a cutoff
+// timestamp) and regroups its flat per-project rows back into one entry per
+// timestamp (matching the local {ts, counts:{tag:{active,total}}} shape) so
+// the rest of the chart code doesn't need to know which source it came
+// from. Returns null (not []) on any failure so the caller can tell
+// "backend has no data" apart from "backend unreachable, use local cache".
+async function fetchProjectSnapshotsFromBackend(sinceIso){
+  const base = getNocBackendUrl();
+  if(!base) return null;
+  const params = new URLSearchParams({ limit: '20000' });
+  if(sinceIso) params.set('since', sinceIso);
+  try{
+    const res = await fetch(`${base}/api/project-snapshots?${params.toString()}`);
+    if(!res.ok) return null;
+    const rows = await res.json(); // [{ts, project, active, total}, ...]
+    const byTs = {};
+    rows.forEach(r => {
+      if(!byTs[r.ts]) byTs[r.ts] = { ts: r.ts, counts: {} };
+      byTs[r.ts].counts[r.project] = { active: r.active, total: r.total };
+    });
+    return Object.values(byTs).sort((a, b) => new Date(a.ts) - new Date(b.ts));
+  }catch(e){
+    console.warn('Project snapshot backend fetch failed, falling back to local history', e);
+    return null;
+  }
 }
 
 // Counts active vs. total gateways currently carrying each tracked project
@@ -1062,12 +1129,17 @@ function computeProjectCounts(){
 // Appends one timestamped snapshot of current active/total counts per
 // project tag. Called after every ThingPark sync (manual or auto-refresh
 // tick, since auto-refresh calls syncFromThingPark under the hood) and from
-// the manual "Take snapshot now" button for on-demand capture.
-function recordProjectSnapshot(){
+// the manual "Take snapshot now" button for on-demand capture. Always
+// writes to localStorage (so nothing is lost if the backend is down or not
+// configured); also POSTs to the shared backend when a Backend API URL is
+// set, so the whole team sees the same trend instead of just this browser.
+async function recordProjectSnapshot(){
   const counts = computeProjectCounts();
-  const snapshots = loadProjectSnapshots();
-  snapshots.push({ ts: new Date().toISOString(), counts });
-  saveProjectSnapshots(snapshots);
+  const ts = new Date().toISOString();
+  const local = loadLocalProjectSnapshots();
+  local.push({ ts, counts });
+  saveLocalProjectSnapshots(local);
+  postProjectSnapshotToBackend(ts, counts); // best-effort, doesn't block the local save above
   renderProjectTrendsChart();
 }
 
@@ -1100,11 +1172,17 @@ function applyProjectTrendCustomRange(){
   renderProjectTrendsChart();
 }
 
-// Filters the full saved snapshot history down to whichever window is
-// currently selected (quick range or custom From/To), so the chart can
-// zoom into a recent slice instead of always plotting everything.
-function getFilteredProjectSnapshots(){
-  const all = loadProjectSnapshots();
+// Resolves the currently-selected range into snapshot entries -- tries the
+// shared backend first (if configured), passing a "since" cutoff for quick
+// ranges to keep the payload small, and falls back to the local
+// (per-browser) history if the backend isn't configured or isn't reachable.
+async function getFilteredProjectSnapshots(){
+  const opt = PROJECT_RANGE_OPTIONS.find(o => o.key === _projectTrendRange);
+  const sinceIso = (opt && opt.ms) ? new Date(Date.now() - opt.ms).toISOString() : null;
+
+  const backendRows = await fetchProjectSnapshotsFromBackend(_projectTrendRange === 'custom' ? null : sinceIso);
+  const all = backendRows !== null ? backendRows : loadLocalProjectSnapshots();
+
   if(_projectTrendRange === 'all') return all;
   if(_projectTrendRange === 'custom'){
     const fromEl = document.getElementById('noc_projectRangeFrom');
@@ -1113,8 +1191,10 @@ function getFilteredProjectSnapshots(){
     const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59').getTime() : Infinity;
     return all.filter(s => { const t = new Date(s.ts).getTime(); return t >= from && t <= to; });
   }
-  const opt = PROJECT_RANGE_OPTIONS.find(o => o.key === _projectTrendRange);
   if(!opt || !opt.ms) return all;
+  // Local fallback already isn't pre-filtered by "since" the way the
+  // backend query is -- apply the same cutoff here so both sources end up
+  // consistent regardless of which one actually served the data.
   const cutoff = Date.now() - opt.ms;
   return all.filter(s => new Date(s.ts).getTime() >= cutoff);
 }
@@ -1131,56 +1211,43 @@ function renderProjectRangeChips(){
 }
 
 let _projectTrendChart = null;
+let _projectTrendRenderToken = 0; // guards against an older async render clobbering a newer one
 // Renders (or re-renders) the Top-10-project trend chart from saved
-// snapshots, filtered to the selected time range. Each project's active
-// count is always plotted as a solid line with visible markers; when
-// "Show total (for downtime comparison)" is checked, a lighter dashed line
-// per project is added for its total tagged-gateway count -- the gap
-// between a project's solid and dashed line at any point in time is a
-// direct visual downtime signal (active dropped below total).
-function renderProjectTrendsChart(){
+// snapshots, filtered to the selected time range. One solid line per
+// project, plotting its active-gateway count over time -- deliberately just
+// the one line per project (an earlier version also plotted a dashed
+// "total" line per project, which made the chart read as two overlapping/
+// broken-looking lines per project and was more confusing than useful).
+async function renderProjectTrendsChart(){
   const canvas = document.getElementById('noc_projectTrendChart');
   if(!canvas || typeof Chart === 'undefined') return;
   renderProjectRangeChips();
-  const allSnapshots = loadProjectSnapshots();
-  const snapshots = getFilteredProjectSnapshots();
+  const myToken = ++_projectTrendRenderToken;
+  const snapshots = await getFilteredProjectSnapshots();
+  if(myToken !== _projectTrendRenderToken) return; // a newer render started while this one was awaiting the fetch
+
+  const usingBackend = !!getNocBackendUrl();
   const statusEl = document.getElementById('noc_projectSnapshotStatus');
   if(statusEl){
-    if(!allSnapshots.length){
-      statusEl.textContent = 'No snapshots saved yet -- sync from ThingPark or click "Take snapshot now" to start recording.';
-    }else{
-      const lastTxt = `Last snapshot: ${new Date(allSnapshots[allSnapshots.length - 1].ts).toLocaleString()} (${allSnapshots.length} saved)`;
-      statusEl.textContent = snapshots.length
-        ? `${lastTxt} -- showing ${snapshots.length} in this range.`
-        : `${lastTxt} -- no snapshots fall within the selected range.`;
-    }
+    statusEl.textContent = snapshots.length
+      ? `Last snapshot: ${new Date(snapshots[snapshots.length - 1].ts).toLocaleString()} -- showing ${snapshots.length} in this range${usingBackend ? ' (shared backend)' : ' (this browser only)'}.`
+      : `No snapshots in this range yet -- sync from ThingPark or click "Take snapshot now" to start recording${usingBackend ? ' (reading from the shared backend)' : ''}.`;
   }
   if(snapshots.length === 0){
     if(_projectTrendChart){ _projectTrendChart.destroy(); _projectTrendChart = null; }
     return;
   }
-  const showTotalEl = document.getElementById('noc_projectShowTotal');
-  const showTotal = showTotalEl ? showTotalEl.checked : false;
   const labels = snapshots.map(s => new Date(s.ts).toLocaleString());
-  const datasets = [];
-  PROJECT_TAGS.forEach((tag, i) => {
+  const datasets = PROJECT_TAGS.map((tag, i) => {
     const color = PROJECT_COLORS[i % PROJECT_COLORS.length];
-    datasets.push({
+    return {
       label: tag,
       data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].active : 0)),
       borderColor: color, backgroundColor: color,
       borderWidth: 3, pointRadius: 4, pointHoverRadius: 6,
       pointBackgroundColor: color, pointBorderColor: '#0d1117', pointBorderWidth: 2,
       tension: 0.3, fill: false
-    });
-    if(showTotal){
-      datasets.push({
-        label: tag + ' (total)',
-        data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].total : 0)),
-        borderColor: color, backgroundColor: color,
-        borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: 0.3
-      });
-    }
+    };
   });
   if(_projectTrendChart){ _projectTrendChart.destroy(); }
   _projectTrendChart = new Chart(canvas.getContext('2d'), {
@@ -1202,10 +1269,16 @@ function renderProjectTrendsChart(){
   });
 }
 // Clears saved snapshot history after confirmation -- e.g. before a fleet
-// re-tagging that would make older data misleading.
-function clearProjectSnapshots(){
+// re-tagging that would make older data misleading. Clears both the local
+// copy and the shared backend (if configured) so the two don't drift.
+async function clearProjectSnapshots(){
   if(!confirm('Clear all saved project trend snapshots? This cannot be undone.')) return;
-  saveProjectSnapshots([]);
+  saveLocalProjectSnapshots([]);
+  const base = getNocBackendUrl();
+  if(base){
+    try{ await fetch(`${base}/api/project-snapshots`, { method: 'DELETE' }); }
+    catch(e){ console.warn('Could not clear backend project snapshot history', e); }
+  }
   renderProjectTrendsChart();
 }
 
@@ -4276,6 +4349,7 @@ function switchTab(tab){
   filterEnvOptions('live');
   filterEnvOptions('planning');
   loadCorsProxyBase();
+  loadNocBackendUrl();
   loadTpwCreds();
   tpwUpdateLastSyncDisplay();
   if(THINGPARK_BUILTIN_DEFAULT.host && THINGPARK_BUILTIN_DEFAULT.clientId){
