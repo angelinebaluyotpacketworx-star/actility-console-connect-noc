@@ -7,6 +7,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <style>
   :root{
     --bg:#0d1117; --panel:#141a22; --panel2:#1b232e; --panel3:#232d3a; --line:#2a3441;
@@ -726,6 +727,28 @@
         </div>
 
         <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Project Trends (Top 10)</span>
+          <button type="button" id="noc_projectTrends_toggle_btn" onclick="toggleNocProjectTrendsSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+        </div>
+        <div id="noc_projectTrends_section_body">
+        <div class="info-box" style="border-left-color:var(--accent);">
+          Tracks active gateway count over time for: MSCP, Victorias City, Converge ICT, COGNIZANT, NAGA CITY, Concentrix, BCDA, JENTEC, SILIKON, UPRI. A snapshot is recorded automatically after every ThingPark sync (manual or auto-refresh). Toggle "Show total" to also plot each project's total tagged-gateway count as a dashed line -- the gap between a project's solid (active) and dashed (total) line at any point is a direct downtime signal for that project.
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+          <button class="ghost-btn" style="max-width:200px;margin:0;" onclick="recordProjectSnapshot()">📸 Take snapshot now</button>
+          <label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer;">
+            <input type="checkbox" id="noc_projectShowTotal" style="width:auto;" onchange="renderProjectTrendsChart()">
+            <span style="font-size:11.5px;color:var(--sub);">Show total (for downtime comparison)</span>
+          </label>
+          <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="clearProjectSnapshots()">Clear history</button>
+        </div>
+        <div id="noc_projectSnapshotStatus" style="font-size:10.5px;color:var(--sub);margin-bottom:8px;"></div>
+        <div style="position:relative;height:320px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;">
+          <canvas id="noc_projectTrendChart"></canvas>
+        </div>
+        </div><!-- /noc_projectTrends_section_body -->
+
+        <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
           <span>Recent Status Changes</span>
           <button type="button" id="noc_history_toggle_btn" onclick="toggleNocHistorySection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
         </div>
@@ -981,6 +1004,127 @@ function nocMetaSuffix(gw){
   }
   if(gw.lastSeen) return ' &middot; last seen ' + formatAgo(gw.lastSeen);
   return '';
+}
+
+// ============ NOC: PROJECT TREND SNAPSHOTS ============
+// Periodically records a timestamped snapshot of active vs. total gateway
+// count for each of the top project tags below, so trends can be reviewed
+// over time (not just the current instant) and downtime windows can be
+// spotted per project. Stored per-browser in localStorage -- same
+// limitation as status history above (not shared across the team until the
+// backend in the roadmap is wired in).
+const PROJECT_TAGS = ['MSCP', 'Victorias City', 'Converge ICT', 'COGNIZANT', 'NAGA CITY', 'Concentrix', 'BCDA', 'JENTEC', 'SILIKON', 'UPRI'];
+const PROJECT_SNAPSHOT_KEY = 'project_snapshot_history_v1';
+const PROJECT_SNAPSHOT_MAX = 5000; // ~52 days at one snapshot per 15 min (default auto-sync interval)
+const PROJECT_COLORS = ['#e6194B','#3cb44b','#4363d8','#f58231','#911eb4','#42d4f4','#f032e6','#bfef45','#e6beff','#469990'];
+
+function loadProjectSnapshots(){
+  try{
+    const raw = localStorage.getItem(PROJECT_SNAPSHOT_KEY);
+    return raw ? JSON.parse(raw) : [];
+  }catch(e){ return []; }
+}
+function saveProjectSnapshots(snapshots){
+  try{ localStorage.setItem(PROJECT_SNAPSHOT_KEY, JSON.stringify(snapshots.slice(-PROJECT_SNAPSHOT_MAX))); }
+  catch(e){ console.warn('Could not save project snapshot history', e); }
+}
+
+// Counts active vs. total gateways currently carrying each tracked project
+// tag. A gateway with multiple tags is counted under each matching one.
+function computeProjectCounts(){
+  const counts = {};
+  PROJECT_TAGS.forEach(t => counts[t] = { active: 0, total: 0 });
+  state.live.gateways.forEach(g => {
+    const tags = g.tags && g.tags.length ? g.tags : [];
+    tags.forEach(t => {
+      if(counts[t]){
+        counts[t].total++;
+        if(g.status === 'active') counts[t].active++;
+      }
+    });
+  });
+  return counts;
+}
+
+// Appends one timestamped snapshot of current active/total counts per
+// project tag. Called after every ThingPark sync (manual or auto-refresh
+// tick, since auto-refresh calls syncFromThingPark under the hood) and from
+// the manual "Take snapshot now" button for on-demand capture.
+function recordProjectSnapshot(){
+  const counts = computeProjectCounts();
+  const snapshots = loadProjectSnapshots();
+  snapshots.push({ ts: new Date().toISOString(), counts });
+  saveProjectSnapshots(snapshots);
+  renderProjectTrendsChart();
+}
+
+let _projectTrendChart = null;
+// Renders (or re-renders) the Top-10-project trend chart from saved
+// snapshots. Each project's active count is always plotted as a solid
+// line; when "Show total (for downtime comparison)" is checked, a lighter
+// dashed line per project is added for its total tagged-gateway count --
+// the gap between a project's solid and dashed line at any point in time
+// is a direct visual downtime signal (active dropped below total).
+function renderProjectTrendsChart(){
+  const canvas = document.getElementById('noc_projectTrendChart');
+  if(!canvas || typeof Chart === 'undefined') return;
+  const snapshots = loadProjectSnapshots();
+  const statusEl = document.getElementById('noc_projectSnapshotStatus');
+  if(statusEl){
+    statusEl.textContent = snapshots.length
+      ? `Last snapshot: ${new Date(snapshots[snapshots.length-1].ts).toLocaleString()} (${snapshots.length} saved)`
+      : 'No snapshots saved yet -- sync from ThingPark or click "Take snapshot now" to start recording.';
+  }
+  if(snapshots.length === 0){
+    if(_projectTrendChart){ _projectTrendChart.destroy(); _projectTrendChart = null; }
+    return;
+  }
+  const showTotalEl = document.getElementById('noc_projectShowTotal');
+  const showTotal = showTotalEl ? showTotalEl.checked : false;
+  const labels = snapshots.map(s => new Date(s.ts).toLocaleString());
+  const datasets = [];
+  PROJECT_TAGS.forEach((tag, i) => {
+    const color = PROJECT_COLORS[i % PROJECT_COLORS.length];
+    datasets.push({
+      label: tag,
+      data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].active : 0)),
+      borderColor: color, backgroundColor: color,
+      borderWidth: 2, pointRadius: 1.5, tension: 0.15
+    });
+    if(showTotal){
+      datasets.push({
+        label: tag + ' (total)',
+        data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].total : 0)),
+        borderColor: color, backgroundColor: color,
+        borderWidth: 1, borderDash: [4,3], pointRadius: 0, tension: 0.15
+      });
+    }
+  });
+  if(_projectTrendChart){ _projectTrendChart.destroy(); }
+  _projectTrendChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#c9d1d9', boxWidth: 12, font: { size: 10.5 } } },
+        tooltip: { mode: 'nearest', intersect: false }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 9.5 } }, grid: { color: '#30363d' } },
+        y: { beginAtZero: true, ticks: { color: '#8b949e', font: { size: 9.5 } }, grid: { color: '#30363d' } }
+      }
+    }
+  });
+}
+// Clears saved snapshot history after confirmation -- e.g. before a fleet
+// re-tagging that would make older data misleading.
+function clearProjectSnapshots(){
+  if(!confirm('Clear all saved project trend snapshots? This cannot be undone.')) return;
+  saveProjectSnapshots([]);
+  renderProjectTrendsChart();
 }
 
 // Tracks which gateways already have an active diagnosis alert fired, so a
@@ -1526,6 +1670,18 @@ function toggleNocSiteSection(){
   const hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
+}
+// Same collapse behavior for "Project Trends" -- collapsing doesn't stop
+// snapshots from recording underneath, it just hides the chart. Re-shown,
+// the chart is re-rendered so Chart.js picks up its now-visible container
+// size correctly instead of staying collapsed to zero height.
+function toggleNocProjectTrendsSection(){
+  const body = document.getElementById('noc_projectTrends_section_body');
+  const btn = document.getElementById('noc_projectTrends_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+  if(hidden) renderProjectTrendsChart();
 }
 // Same collapse behavior for "Recent Status Changes" -- this list can grow
 // long on a busy shift, and this keeps the dashboard from getting unwieldy.
@@ -2995,6 +3151,7 @@ async function syncFromThingPark(){
     updateSyncAgeIndicator();
     flushNocInactiveBatch();
     checkDiagnosisAlerts();
+    recordProjectSnapshot();
     tpwLog(`Sync complete: ${added} added, ${updated} updated, ${noGps} missing GPS (added without a map pin), ${errors} skipped.`, true);
   }catch(err){
     const corsHint = /Failed to fetch|NetworkError|TypeError/.test(err.message) || err instanceof TypeError;
@@ -3958,7 +4115,7 @@ function switchTab(tab){
   document.getElementById('panel-planning').classList.toggle('active', tab === 'planning');
   document.getElementById('panel-noc').classList.toggle('active', tab === 'noc');
   setTimeout(() => { if(state[tab] && state[tab].map) state[tab].map.invalidateSize(); }, 50);
-  if(tab === 'noc') renderNocDashboard();
+  if(tab === 'noc'){ renderNocDashboard(); renderProjectTrendsChart(); }
 }
 
 // ============ INIT ============
