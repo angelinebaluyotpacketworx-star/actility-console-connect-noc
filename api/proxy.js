@@ -1,3 +1,4 @@
+// last updated 2026-07-30
 // Vercel serverless function -- same-origin CORS proxy for the NOC dashboard.
 //
 // ThingPark and Console Connect don't reliably send back an
