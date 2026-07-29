@@ -399,8 +399,10 @@
           </label>
           <input id="live_autoSyncMinutes" type="number" min="2" step="1" value="15" style="max-width:120px;" onchange="updateAutoSyncSetting('live')">
           <div id="tpw_status" style="font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5;white-space:pre-line;"></div>
+          <label style="margin-top:10px;">CORS Proxy URL (optional — shared with Console Connect below)</label>
+          <input id="cors_proxy_base" placeholder="/api/proxy (default — leave blank on the Vercel deployment)" onchange="saveCorsProxyBase()">
           <div class="caveat">
-            <b>CORS note:</b> ThingPark's API is typically not reachable with direct browser fetches from a local/static file — you'll likely see a network error. If that happens, run the included <code>thingpark_cors_proxy.py</code> script (<code>python thingpark_cors_proxy.py your-thingpark-hostname</code>) and point this field at <code>http://localhost:8787</code> instead of the ThingPark hostname.
+            <b>CORS note:</b> ThingPark's API doesn't reliably send CORS headers back to a direct browser request, which used to require a CORS-unblock browser extension. That's no longer needed — sync requests are routed through a same-origin proxy automatically (the bundled <code>api/proxy.js</code> on the Vercel deployment, zero setup). On an internal-server deployment with no serverless-function support, run the included <code>cors_proxy_server.py</code> (stdlib-only: <code>python cors_proxy_server.py 8787</code>) somewhere reachable from operators' browsers and enter its address above, e.g. <code>http://10.0.1.5:8787/api/proxy</code>. If the proxy address isn't reachable, sync automatically falls back to a direct request, which may still need a browser extension.
             <br><br>
             <b>Field mapping caveat:</b> installation type (indoor/outdoor) is set from Actility's "Location mode" field — outdoor only when it's Onboard GNSS Position, indoor otherwise (Manual or unset). RF Region is probed from a few plausible field names (unconfirmed against a live response), and RSSI is left blank (ThingPark reports RSSI per uplink, not per gateway) — edit synced entries to correct these.
             <br><br>
@@ -444,6 +446,8 @@
             <b>Auth confirmed, SIM lookup still a scaffold:</b> login now uses the real Aeris IoT-A OAuth2 password-grant flow (<code>POST /iot/api/auth/token</code> → Bearer token → <code>/iot/api/ecm/enterprises/{enterprise_id}/...</code>), taken from PCCW Console Connect's official Enterprise Management API v26.1 spec. That document covers enterprise/subscription-package administration only — it has no endpoint to look up a single SIM's live status by ICCID, so the lookup path itself is still a best guess to be corrected once you have that spec (or its sibling doc). <b>The CSV import below works today</b> with no credentials — it reads the exact file Console Connect's own portal exports.
             <br><br>
             <b>Diagnosis:</b> gateway offline + SIM active → Backhaul/Device Fault. Gateway offline + SIM inactive → Connectivity/Billing Issue. Gateway online + usage over your threshold → Traffic Anomaly Alert (off until you set a threshold above — a single reading has no trend to compare against).
+            <br><br>
+            <b>CORS note:</b> like ThingPark above, Console Connect's API calls are routed through the same CORS Proxy (see the "CORS Proxy URL" field in the ThingPark section) so no browser extension is needed — nothing extra to configure here, it's shared automatically.
           </div>
           </div><!-- /cc_section_body -->
 
@@ -2552,6 +2556,75 @@ function loadSample(tab){
   renderList('live'); renderMap('live'); save('live');
 }
 
+// ============ CORS-FREE API PROXY ============
+// ThingPark and Console Connect don't reliably send back an
+// Access-Control-Allow-Origin header, so the browser silently blocks a
+// direct cross-origin fetch() to their APIs -- previously worked around by
+// installing a CORS-unblock browser extension on every operator's machine.
+// This routes those calls through a small proxy instead: the *browser*
+// only ever talks to this proxy endpoint (same-origin by default), which
+// itself sends proper CORS headers back -- so the browser's CORS check is
+// satisfied without an extension. The proxy then makes the real request to
+// ThingPark/Console Connect server-side, where CORS doesn't apply at all
+// (CORS is a browser-only restriction), and relays the response back
+// untouched (status, content-type, body).
+//
+// On the Vercel deployment this is the bundled `api/proxy.js` serverless
+// function and works automatically with zero setup. On an internal-server
+// deployment with no serverless-function support, run the included
+// `cors_proxy_server.py` (stdlib-only, `python cors_proxy_server.py 8787`)
+// somewhere reachable from operators' browsers, then set "CORS Proxy URL"
+// below to that script's address (e.g. http://10.0.1.5:8787/api/proxy).
+const CORS_PROXY_KEY = 'cors_proxy_base_v1';
+function getCorsProxyBase(){
+  try{
+    const override = (localStorage.getItem(CORS_PROXY_KEY) || '').trim();
+    if(override) return override.replace(/\/+$/, '');
+  }catch(e){}
+  return '/api/proxy'; // same-origin default -- a harmless 404 if not deployed
+}
+let _corsProxyKnownDown = false; // cache a failed probe so we don't retry it every request this page load
+// Drop-in replacement for fetch(url, opts) that tries the CORS proxy first
+// (same-origin or explicitly configured, so the browser never CORS-blocks
+// it) and falls back to a direct request only if the proxy itself isn't
+// reachable (e.g. a static file server with no proxy deployed/configured) --
+// in that fallback case a browser CORS-unblock extension may still be
+// needed, exactly as before this feature existed.
+// Persists an override CORS proxy address (e.g. an internal-server
+// deployment's standalone cors_proxy_server.py) from the "CORS Proxy URL"
+// field. Leaving it blank reverts to the same-origin "/api/proxy" default.
+function saveCorsProxyBase(){
+  const el = document.getElementById('cors_proxy_base');
+  const val = el ? el.value.trim() : '';
+  try{
+    if(val) localStorage.setItem(CORS_PROXY_KEY, val);
+    else localStorage.removeItem(CORS_PROXY_KEY);
+  }catch(e){}
+  _corsProxyKnownDown = false; // give the newly-set address a fresh try
+}
+function loadCorsProxyBase(){
+  const el = document.getElementById('cors_proxy_base');
+  if(!el) return;
+  try{ el.value = localStorage.getItem(CORS_PROXY_KEY) || ''; }catch(e){}
+}
+async function corsFetch(url, opts){
+  opts = opts || {};
+  if(!_corsProxyKnownDown){
+    try{
+      const proxyResp = await fetch(getCorsProxyBase(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, method: opts.method || 'GET', headers: opts.headers || {}, body: opts.body })
+      });
+      if(proxyResp.status !== 404) return proxyResp;
+      _corsProxyKnownDown = true; // no proxy endpoint at this address -- stop trying it this page load
+    }catch(e){
+      _corsProxyKnownDown = true; // proxy unreachable -- same reasoning
+    }
+  }
+  return fetch(url, opts);
+}
+
 // ============ ACTILITY THINGPARK WIRELESS SYNC ============
 // OAuth2 client-credentials flow against the platform's Keycloak-style token
 // endpoint, then a paginated fetch of base stations (control-plane "bss" API):
@@ -2639,7 +2712,7 @@ async function tpwDiscoverAuthPrefix(baseUrl){
   const OIDC_PREFIX_CANDIDATES = ['/admins-auth', '/users-auth'];
   for(const prefix of OIDC_PREFIX_CANDIDATES){
     try{
-      const res = await fetch(`${baseUrl}${prefix}/.well-known/openid-configuration`);
+      const res = await corsFetch(`${baseUrl}${prefix}/.well-known/openid-configuration`);
       if(res.ok){
         const config = await res.json();
         // IMPORTANT: on self-hosted/reverse-proxied deployments, the
@@ -2686,7 +2759,7 @@ async function tpwRequestToken(tokenUrl, clientId, clientSecret, useBasicAuth){
     body.set('client_id', clientId);
     body.set('client_secret', clientSecret);
   }
-  return fetch(tokenUrl, { method: 'POST', headers, body: body.toString() });
+  return corsFetch(tokenUrl, { method: 'POST', headers, body: body.toString() });
 }
 
 // Keycloak's error responses are JSON with "error" (a machine-readable OAuth2
@@ -2779,7 +2852,7 @@ async function tpwAuthedFetch(url, tokenState, options){
   const headers = Object.assign({ 'Accept': 'application/json' }, options.headers || {}, {
     'Authorization': `Bearer ${tokenState.token}`
   });
-  let res = await fetch(url, Object.assign({}, options, { headers }));
+  let res = await corsFetch(url, Object.assign({}, options, { headers }));
   if(res.status === 401){
     if(!tokenState.refreshPromise){
       tokenState.refreshPromise = tpwGetToken(tokenState.baseUrl, tokenState.clientId, tokenState.clientSecret)
@@ -2790,7 +2863,7 @@ async function tpwAuthedFetch(url, tokenState, options){
     const retryHeaders = Object.assign({ 'Accept': 'application/json' }, options.headers || {}, {
       'Authorization': `Bearer ${tokenState.token}`
     });
-    res = await fetch(url, Object.assign({}, options, { headers: retryHeaders }));
+    res = await corsFetch(url, Object.assign({}, options, { headers: retryHeaders }));
   }
   return res;
 }
@@ -3431,7 +3504,7 @@ async function ccParseErrorResponse(res){
 async function ccGetToken(baseUrl, clientId, username, password){
   const url = `${baseUrl}/iot/api/auth/token`;
   const body = new URLSearchParams({ grant_type: 'password', client_id: clientId, username, password });
-  const res = await fetch(url, {
+  const res = await corsFetch(url, {
     method: 'POST',
     headers: {
       'Accept': 'application/vnd.dcp-v1+json',
@@ -3455,7 +3528,7 @@ async function ccLookupIccid(baseUrl, enterpriseId, iccid, token){
   const enterprisePath = enterpriseId ? `/${encodeURIComponent(enterpriseId)}` : '';
   const url = `${baseUrl}/iot/api/ecm/enterprises${enterprisePath}/subscriptions?iccid=${encodeURIComponent(iccid)}`;
   const headers = { 'Accept': 'application/json', 'Authorization': `Bearer ${token}` };
-  const res = await fetch(url, { headers });
+  const res = await corsFetch(url, { headers });
   if(!res.ok) throw new Error(await ccParseErrorResponse(res));
   const json = await res.json();
   const fields = ccExtractSimFields(json);
@@ -4202,6 +4275,7 @@ function switchTab(tab){
   initMap('planning');
   filterEnvOptions('live');
   filterEnvOptions('planning');
+  loadCorsProxyBase();
   loadTpwCreds();
   tpwUpdateLastSyncDisplay();
   if(THINGPARK_BUILTIN_DEFAULT.host && THINGPARK_BUILTIN_DEFAULT.clientId){
