@@ -742,6 +742,15 @@
           </label>
           <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="clearProjectSnapshots()">Clear history</button>
         </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:10.5px;color:var(--sub);">Range:</span>
+          <div id="noc_projectRangeChips" class="filter-chips" style="margin-top:0;"></div>
+          <span style="width:1px;height:16px;background:var(--line);"></span>
+          <input type="date" id="noc_projectRangeFrom" style="width:auto;padding:4px 7px;font-size:10.5px;">
+          <span style="font-size:10.5px;color:var(--sub);">to</span>
+          <input type="date" id="noc_projectRangeTo" style="width:auto;padding:4px 7px;font-size:10.5px;">
+          <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="applyProjectTrendCustomRange()">Apply</button>
+        </div>
         <div id="noc_projectSnapshotStatus" style="font-size:10.5px;color:var(--sub);margin-bottom:8px;"></div>
         <div style="position:relative;height:320px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;">
           <canvas id="noc_projectTrendChart"></canvas>
@@ -1058,22 +1067,89 @@ function recordProjectSnapshot(){
   renderProjectTrendsChart();
 }
 
+// ---- time-range filter for the chart ----
+// Quick-pick windows (Previous Hour/Day/Week/Month/Year) plus "All" and a
+// "custom" mode driven by the From/To date inputs. This only changes which
+// saved snapshots feed the chart -- it never deletes or alters history.
+let _projectTrendRange = 'all'; // '1h' | '1d' | '7d' | '30d' | '365d' | 'all' | 'custom'
+const PROJECT_RANGE_OPTIONS = [
+  { key: '1h', label: '1H', ms: 60 * 60 * 1000 },
+  { key: '1d', label: 'Day', ms: 24 * 60 * 60 * 1000 },
+  { key: '7d', label: 'Week', ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: '30d', label: 'Month', ms: 30 * 24 * 60 * 60 * 1000 },
+  { key: '365d', label: 'Year', ms: 365 * 24 * 60 * 60 * 1000 },
+  { key: 'all', label: 'All', ms: null }
+];
+
+function setProjectTrendRange(key){
+  _projectTrendRange = key;
+  renderProjectTrendsChart();
+}
+
+// Reads the From/To date inputs and switches the chart into custom-range
+// mode. Either end can be left blank to mean "no lower/upper bound".
+function applyProjectTrendCustomRange(){
+  const fromEl = document.getElementById('noc_projectRangeFrom');
+  const toEl = document.getElementById('noc_projectRangeTo');
+  if(!fromEl || !toEl || (!fromEl.value && !toEl.value)) return;
+  _projectTrendRange = 'custom';
+  renderProjectTrendsChart();
+}
+
+// Filters the full saved snapshot history down to whichever window is
+// currently selected (quick range or custom From/To), so the chart can
+// zoom into a recent slice instead of always plotting everything.
+function getFilteredProjectSnapshots(){
+  const all = loadProjectSnapshots();
+  if(_projectTrendRange === 'all') return all;
+  if(_projectTrendRange === 'custom'){
+    const fromEl = document.getElementById('noc_projectRangeFrom');
+    const toEl = document.getElementById('noc_projectRangeTo');
+    const from = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00').getTime() : -Infinity;
+    const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59').getTime() : Infinity;
+    return all.filter(s => { const t = new Date(s.ts).getTime(); return t >= from && t <= to; });
+  }
+  const opt = PROJECT_RANGE_OPTIONS.find(o => o.key === _projectTrendRange);
+  if(!opt || !opt.ms) return all;
+  const cutoff = Date.now() - opt.ms;
+  return all.filter(s => new Date(s.ts).getTime() >= cutoff);
+}
+
+// Draws the Range chip row (1H/Day/Week/Month/Year/All), highlighting
+// whichever one is active -- same "chip.active" pattern used by the RF
+// region and tag filter chips elsewhere in the app.
+function renderProjectRangeChips(){
+  const el = document.getElementById('noc_projectRangeChips');
+  if(!el) return;
+  el.innerHTML = PROJECT_RANGE_OPTIONS.map(o =>
+    `<span class="chip ${_projectTrendRange === o.key ? 'active' : ''}" onclick="setProjectTrendRange('${o.key}')">${o.label}</span>`
+  ).join('');
+}
+
 let _projectTrendChart = null;
 // Renders (or re-renders) the Top-10-project trend chart from saved
-// snapshots. Each project's active count is always plotted as a solid
-// line; when "Show total (for downtime comparison)" is checked, a lighter
-// dashed line per project is added for its total tagged-gateway count --
-// the gap between a project's solid and dashed line at any point in time
-// is a direct visual downtime signal (active dropped below total).
+// snapshots, filtered to the selected time range. Each project's active
+// count is always plotted as a solid line with visible markers; when
+// "Show total (for downtime comparison)" is checked, a lighter dashed line
+// per project is added for its total tagged-gateway count -- the gap
+// between a project's solid and dashed line at any point in time is a
+// direct visual downtime signal (active dropped below total).
 function renderProjectTrendsChart(){
   const canvas = document.getElementById('noc_projectTrendChart');
   if(!canvas || typeof Chart === 'undefined') return;
-  const snapshots = loadProjectSnapshots();
+  renderProjectRangeChips();
+  const allSnapshots = loadProjectSnapshots();
+  const snapshots = getFilteredProjectSnapshots();
   const statusEl = document.getElementById('noc_projectSnapshotStatus');
   if(statusEl){
-    statusEl.textContent = snapshots.length
-      ? `Last snapshot: ${new Date(snapshots[snapshots.length-1].ts).toLocaleString()} (${snapshots.length} saved)`
-      : 'No snapshots saved yet -- sync from ThingPark or click "Take snapshot now" to start recording.';
+    if(!allSnapshots.length){
+      statusEl.textContent = 'No snapshots saved yet -- sync from ThingPark or click "Take snapshot now" to start recording.';
+    }else{
+      const lastTxt = `Last snapshot: ${new Date(allSnapshots[allSnapshots.length - 1].ts).toLocaleString()} (${allSnapshots.length} saved)`;
+      statusEl.textContent = snapshots.length
+        ? `${lastTxt} -- showing ${snapshots.length} in this range.`
+        : `${lastTxt} -- no snapshots fall within the selected range.`;
+    }
   }
   if(snapshots.length === 0){
     if(_projectTrendChart){ _projectTrendChart.destroy(); _projectTrendChart = null; }
@@ -1089,14 +1165,16 @@ function renderProjectTrendsChart(){
       label: tag,
       data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].active : 0)),
       borderColor: color, backgroundColor: color,
-      borderWidth: 2, pointRadius: 1.5, tension: 0.15
+      borderWidth: 3, pointRadius: 4, pointHoverRadius: 6,
+      pointBackgroundColor: color, pointBorderColor: '#0d1117', pointBorderWidth: 2,
+      tension: 0.3, fill: false
     });
     if(showTotal){
       datasets.push({
         label: tag + ' (total)',
         data: snapshots.map(s => (s.counts[tag] ? s.counts[tag].total : 0)),
         borderColor: color, backgroundColor: color,
-        borderWidth: 1, borderDash: [4,3], pointRadius: 0, tension: 0.15
+        borderWidth: 2, borderDash: [5, 4], pointRadius: 0, tension: 0.3
       });
     }
   });
@@ -1113,7 +1191,7 @@ function renderProjectTrendsChart(){
         tooltip: { mode: 'nearest', intersect: false }
       },
       scales: {
-        x: { ticks: { color: '#8b949e', maxTicksLimit: 8, font: { size: 9.5 } }, grid: { color: '#30363d' } },
+        x: { ticks: { color: '#8b949e', maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 12, font: { size: 9.5 } }, grid: { color: '#30363d' } },
         y: { beginAtZero: true, ticks: { color: '#8b949e', font: { size: 9.5 } }, grid: { color: '#30363d' } }
       }
     }
