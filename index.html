@@ -949,6 +949,7 @@ function recordStatusChange(gw, fromStatus, toStatus){
   state.live.statusHistory.unshift(entry);
   if(state.live.statusHistory.length > 500) state.live.statusHistory.length = 500;
   saveStatusHistory();
+  postHistoryToBackend(entry); // best-effort, doesn't block the local save above
   if(toStatus === 'inactive') _nocBatchInactive.push({ name: gw.name||'Unnamed gateway', site: gw.site||'' });
 }
 // Turns whatever accumulated in _nocBatchInactive into a single alert with a
@@ -1042,12 +1043,143 @@ function saveNocBackendUrl(){
     if(val) localStorage.setItem(NOC_BACKEND_KEY, val);
     else localStorage.removeItem(NOC_BACKEND_KEY);
   }catch(e){}
+  if(val) refreshFromBackend(); // newly pointed at a backend -- pull its shared state right away
   renderProjectTrendsChart();
 }
 function loadNocBackendUrl(){
   const el = document.getElementById('noc_backend_url');
   if(!el) return;
   try{ el.value = localStorage.getItem(NOC_BACKEND_KEY) || ''; }catch(e){}
+}
+
+// ---- gateways / status history / diagnosis -> shared backend ----
+// Same best-effort pattern as the project-snapshot functions above: always
+// write to localStorage first (nothing is ever lost if the backend is down
+// or unset), then also push to the backend when a Backend API URL is
+// configured so the whole team ends up looking at the same data instead of
+// each browser's own copy.
+
+// Bulk-pushes the current gateway list to the backend after a sync (ThingPark or CSV import).
+async function pushGatewaysToBackend(gateways){
+  const base = getNocBackendUrl();
+  if(!base) return false;
+  try{
+    const res = await fetch(`${base}/api/gateways/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(gateways)
+    });
+    return res.ok;
+  }catch(e){
+    console.warn('Gateway backend sync push failed', e);
+    return false;
+  }
+}
+
+// Team-wide "last sync" time, derived from the newest updated_at across
+// every gateway row the backend returned -- i.e. when ANYONE last synced,
+// not just this browser. Set by pullGatewaysFromBackend(); read by
+// tpwUpdateLastSyncDisplay() below.
+let _backendLastSyncIso = null;
+
+// Pulls the shared gateway list from the backend. Returns null (not []) on
+// failure/not-configured so callers can tell "backend has nothing yet"
+// apart from "backend unreachable, keep whatever's already in localStorage".
+async function pullGatewaysFromBackend(){
+  const base = getNocBackendUrl();
+  if(!base) return null;
+  try{
+    const res = await fetch(`${base}/api/gateways`);
+    if(!res.ok) return null;
+    const rows = await res.json();
+    if(rows.length){
+      const latest = rows.reduce((max, r) => (r.updated_at && r.updated_at > max ? r.updated_at : max), '');
+      if(latest) _backendLastSyncIso = latest;
+    }
+    return rows.map(r => ({
+      name: r.name, lrr: r.lrr || '', site: r.site || '', rfRegion: r.rf_region || '',
+      gatewayId: r.gateway_id || '', iccid: r.iccid || '',
+      lat: r.lat != null ? String(r.lat) : '', lon: r.lon != null ? String(r.lon) : '',
+      type: r.installation_type || '', env: r.environment || 'mixed',
+      status: r.status || 'unknown', rssi: r.rssi != null ? String(r.rssi) : '',
+      notes: r.notes || '', lastSeen: r.last_seen || '', tags: Array.isArray(r.tags) ? r.tags : []
+    }));
+  }catch(e){
+    console.warn('Gateway backend pull failed', e);
+    return null;
+  }
+}
+
+// Pushes one status-change entry, mirroring recordStatusChange()'s local write.
+async function postHistoryToBackend(entry){
+  const base = getNocBackendUrl();
+  if(!base) return false;
+  try{
+    const res = await fetch(`${base}/api/history`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry)
+    });
+    return res.ok;
+  }catch(e){
+    console.warn('Status history backend push failed', e);
+    return false;
+  }
+}
+
+// Pulls recent status-change history from the backend, remapped to the
+// same {ts, lrr, name, site, from, to} shape used locally.
+async function pullHistoryFromBackend(limit){
+  const base = getNocBackendUrl();
+  if(!base) return null;
+  try{
+    const res = await fetch(`${base}/api/history?limit=${limit || 500}`);
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows.map(r => ({ ts: r.ts, lrr: r.lrr || '', name: r.name || 'Unnamed gateway', site: r.site || '', from: r.from_status || '', to: r.to_status || '' }));
+  }catch(e){
+    console.warn('Status history backend pull failed', e);
+    return null;
+  }
+}
+
+// Pushes one newly-flagged Gateway+SIM diagnosis event, mirroring the alert checkDiagnosisAlerts() already fires locally.
+async function postDiagnosisToBackend(gw, diag){
+  const base = getNocBackendUrl();
+  if(!base) return false;
+  try{
+    const res = await fetch(`${base}/api/diagnosis`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ lrr: gw.lrr || '', name: gw.name || 'Unnamed gateway', site: gw.site || '', diagnosisType: diag.code || diag.label, detail: diag.detail })
+    });
+    return res.ok;
+  }catch(e){
+    console.warn('Diagnosis backend push failed', e);
+    return false;
+  }
+}
+
+// Pulls the shared gateway list + recent status history from the backend
+// (if configured) and loads them into local state, so opening the
+// dashboard automatically shows the team's last-synced fleet state instead
+// of staying empty (or stale) until someone in THIS browser clicks Sync.
+// Called on page load and whenever the Backend API URL field changes.
+async function refreshFromBackend(){
+  const base = getNocBackendUrl();
+  if(!base) return;
+  const [gateways, history] = await Promise.all([pullGatewaysFromBackend(), pullHistoryFromBackend(500)]);
+  if(gateways && gateways.length){
+    state.live.gateways = gateways;
+    save('live');
+    renderList('live'); renderMap('live');
+  }
+  if(history){
+    state.live.statusHistory = history;
+    saveStatusHistory();
+  }
+  tpwUpdateLastSyncDisplay();
+  if(typeof renderNocDashboard === 'function') renderNocDashboard();
 }
 
 function loadLocalProjectSnapshots(){
@@ -1299,6 +1431,7 @@ function checkDiagnosisAlerts(){
     if(!_nocDiagAlerted.has(key)){
       _nocDiagAlerted.add(key);
       fireNocAlert(`⚠ ${diag.label}: ${gw.name}${gw.site ? ' ('+gw.site+')' : ''} — ${diag.detail}`, new Date().toISOString(), 0);
+      postDiagnosisToBackend(gw, diag); // best-effort, doesn't block the alert above
     }
   });
   // Drop keys for gateways no longer flagged so a future re-occurrence alerts again
@@ -2574,6 +2707,7 @@ function importCSV(tab, e){
       if(idx >= 0){ state[tab].gateways[idx] = entry; updated++; } else { state[tab].gateways.push(entry); added++; }
     }
     renderList(tab); renderMap(tab); save(tab);
+    if(tab === 'live') pushGatewaysToBackend(state.live.gateways); // best-effort, shares the imported fleet with the whole team
     alert(`Import complete: ${added} added, ${updated} updated.`);
   };
   reader.readAsText(file);
@@ -2723,12 +2857,24 @@ const THINGPARK_BUILTIN_DEFAULT = {
   clientSecret: ''  // ThingPark OAuth2 client secret
 };
 
-// Updates the "Last synced" text next to the ThingPark sync button.
+// Updates the "Last synced" text next to the ThingPark sync button. When a
+// Backend API URL is configured, shows the team-wide last sync time (the
+// newest gateway updated_at the backend has seen, from ANY browser) instead
+// of just this browser's own -- whichever is newer wins, so a sync from
+// this browser shows up immediately even before the next backend pull.
 function tpwUpdateLastSyncDisplay(){
   const el = document.getElementById('tpw_lastSync');
   if(!el) return;
-  const iso = localStorage.getItem(TPW_LAST_SYNC_KEY);
-  el.textContent = iso ? `Last synced: ${new Date(iso).toLocaleString()}` : 'Last synced: never';
+  const localIso = localStorage.getItem(TPW_LAST_SYNC_KEY);
+  const usingBackend = !!getNocBackendUrl();
+  const iso = (usingBackend && _backendLastSyncIso && (!localIso || _backendLastSyncIso > localIso))
+    ? _backendLastSyncIso
+    : localIso;
+  if(!iso){
+    el.textContent = 'Last synced: never';
+  } else {
+    el.textContent = `Last synced: ${new Date(iso).toLocaleString()}${usingBackend ? ' (team-wide)' : ''}`;
+  }
 }
 
 // Writes to the ThingPark sync status log box (optionally appending instead of replacing).
@@ -3371,6 +3517,7 @@ async function syncFromThingPark(){
 
     renderList('live'); renderMap('live'); save('live');
     localStorage.setItem(TPW_LAST_SYNC_KEY, new Date().toISOString());
+    pushGatewaysToBackend(state.live.gateways); // best-effort, shares this sync's results with the whole team
     tpwUpdateLastSyncDisplay();
     updateSyncAgeIndicator();
     flushNocInactiveBatch();
@@ -4391,6 +4538,16 @@ function switchTab(tab){
   if(hasTpwCreds){
     tpwLog('Remembered ThingPark credentials found. Click "Sync gateways from ThingPark" when you want fresh data.');
   }
+
+  // If a Backend API URL is configured, automatically pull the shared
+  // gateway list + recent status history right away -- this is different
+  // from the "no auto-sync on load" note above (that's about NOT hitting
+  // ThingPark's API automatically); reading what the backend already has
+  // is just a local-network fetch and is fast even for a large fleet, so it
+  // runs unconditionally. This is what makes "Last synced" show the whole
+  // team's most recent sync the moment the page opens, not just this
+  // browser's own history.
+  refreshFromBackend();
 })();
 </script>
 </body>
