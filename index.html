@@ -397,7 +397,7 @@
             <input type="checkbox" id="live_autoSyncEnabled" style="width:auto;" onchange="updateAutoSyncSetting('live')">
             <span style="font-size:11.5px;color:var(--sub);">Auto-refresh every (minutes) -- also configurable from the NOC Dashboard</span>
           </label>
-          <input id="live_autoSyncMinutes" type="number" min="2" step="1" value="15" style="max-width:120px;" onchange="updateAutoSyncSetting('live')">
+          <input id="live_autoSyncMinutes" type="number" min="2" step="1" value="5" style="max-width:120px;" onchange="updateAutoSyncSetting('live')">
           <div id="tpw_status" style="font-size:11px;color:var(--sub);margin-top:8px;line-height:1.5;white-space:pre-line;"></div>
           <label style="margin-top:10px;">CORS Proxy URL (optional — shared with Console Connect below)</label>
           <input id="cors_proxy_base" placeholder="/api/proxy (default — leave blank on the Vercel deployment)" onchange="saveCorsProxyBase()">
@@ -775,7 +775,7 @@
           <input type="checkbox" id="noc_autoSyncEnabled" style="width:auto;" onchange="updateNocSettings()">
           <span style="font-size:11.5px;color:var(--sub);">Auto-refresh from ThingPark every (minutes)</span>
         </label>
-        <input id="noc_autoSyncMinutes" type="number" min="2" step="1" value="15" style="max-width:120px;" onchange="updateNocSettings()">
+        <input id="noc_autoSyncMinutes" type="number" min="2" step="1" value="5" style="max-width:120px;" onchange="updateNocSettings()">
         <label style="display:flex;align-items:center;gap:8px;margin-top:10px;cursor:pointer;">
           <input type="checkbox" id="noc_autoSyncIncludeCc" style="width:auto;" onchange="updateNocSettings()">
           <span style="font-size:11.5px;color:var(--sub);">Also re-check Console Connect SIM status on each auto-refresh (uses the API credentials saved above, not the CSV import)</span>
@@ -1440,7 +1440,7 @@ function checkDiagnosisAlerts(){
 
 // ============ NOC: SETTINGS (auto-refresh + alerts) ============
 const NOC_SETTINGS_KEY = 'noc_settings_v1';
-const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:15, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, activeBaseline:0, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
+const NOC_SETTINGS_DEFAULT = { autoSyncEnabled:false, autoSyncMinutes:5, autoSyncIncludeCc:false, staleMinutes:120, notifyEnabled:false, webhookUrl:'', emailEnabled:true, emailTo:'networkteampacketworx@gmail.com', emailCc:'', emailTo2:'', emailCc2:'', level1Threshold:10, level2Threshold:25, activeBaseline:0, emailServiceId:'networkteamemail', emailTemplateId:'template_l69e237', emailPublicKey:'YkBn47lz8aUHbtjRr' };
 // Reads saved NOC settings from localStorage, merged over the defaults so newly added settings fields don't break old saved data.
 function getNocSettings(){
   try{
@@ -1485,7 +1485,7 @@ function applyNocAutoSync(){
 function updateNocSettings(){
   const s = {
     autoSyncEnabled: document.getElementById('noc_autoSyncEnabled').checked,
-    autoSyncMinutes: parseInt(document.getElementById('noc_autoSyncMinutes').value,10) || 15,
+    autoSyncMinutes: parseInt(document.getElementById('noc_autoSyncMinutes').value,10) || 5,
     autoSyncIncludeCc: document.getElementById('noc_autoSyncIncludeCc').checked,
     staleMinutes: getNocSettings().staleMinutes,
     notifyEnabled: document.getElementById('noc_notifyEnabled').checked,
