@@ -760,6 +760,25 @@
         </div><!-- /noc_projectTrends_section_body -->
 
         <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Gateway Trend Search</span>
+          <button type="button" id="noc_gwTrend_toggle_btn" onclick="toggleNocGwTrendSection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
+        </div>
+        <div id="noc_gwTrend_section_body">
+        <div class="info-box" style="border-left-color:var(--accent);">
+          Search for one specific gateway to see its own active/inactive trend over time, built from its status-change history (Recent Status Changes below). Uses the same Range filter as Project Trends above.
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <input list="noc_gwTrend_options" id="noc_gwTrend_search" placeholder="Search gateway name or LRR ID..." style="flex:1;min-width:220px;margin:0;" oninput="onGatewayTrendSearchInput()">
+          <datalist id="noc_gwTrend_options"></datalist>
+          <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="clearGatewayTrendSelection()">Clear</button>
+        </div>
+        <div id="noc_gwTrendStatus" style="font-size:10.5px;color:var(--sub);margin-bottom:8px;"></div>
+        <div id="noc_gwTrendChartWrap" style="position:relative;height:260px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;display:none;">
+          <canvas id="noc_gwTrendChart"></canvas>
+        </div>
+        </div><!-- /noc_gwTrend_section_body -->
+
+        <div class="section-label live" style="display:flex;align-items:center;justify-content:space-between;">
           <span>Recent Status Changes</span>
           <button type="button" id="noc_history_toggle_btn" onclick="toggleNocHistorySection()" style="background:none;border:1px solid var(--line);color:var(--sub);padding:2px 9px;border-radius:10px;font-size:10px;font-weight:600;text-transform:none;letter-spacing:0;">Hide</button>
         </div>
@@ -1354,6 +1373,8 @@ async function renderProjectTrendsChart(){
   const canvas = document.getElementById('noc_projectTrendChart');
   if(!canvas || typeof Chart === 'undefined') return;
   renderProjectRangeChips();
+  populateGatewayTrendOptions();
+  renderGatewayTrendChart(); // shares the same Range chips/custom dates, so keep it in sync
   const myToken = ++_projectTrendRenderToken;
   const snapshots = await getFilteredProjectSnapshots();
   if(myToken !== _projectTrendRenderToken) return; // a newer render started while this one was awaiting the fetch
@@ -1412,6 +1433,166 @@ async function clearProjectSnapshots(){
     catch(e){ console.warn('Could not clear backend project snapshot history', e); }
   }
   renderProjectTrendsChart();
+}
+
+// ============ NOC: PER-GATEWAY TREND SEARCH ============
+// Lets someone search for one specific gateway (by name or LRR id) and see
+// its own active/inactive trend over time, built from the same
+// status-change history used for "Recent Status Changes" / "Currently
+// Down" -- no new backend storage needed, this just re-slices data that's
+// already being recorded on every sync.
+let _selectedGatewayTrend = null; // { lrr, name } | null
+let _gwTrendChart = null;
+
+// Builds the {label -> {lrr,name}} lookup used both for the <datalist>
+// options and for resolving what the user typed back into a specific
+// gateway. Pulls from the current fleet (Live tab) first, then fills in
+// any gateways that only exist in history (e.g. since removed/renamed) so
+// old trend data doesn't just disappear from the search.
+function gatewayTrendCandidates(){
+  const map = new Map(); // label -> {lrr, name}
+  const label = (name, lrr) => lrr ? `${name} (${lrr})` : name;
+  state.live.gateways.forEach(g => {
+    if(!g.name) return;
+    map.set(label(g.name, g.lrr), { lrr: g.lrr || '', name: g.name });
+  });
+  state.live.statusHistory.forEach(h => {
+    if(!h.name) return;
+    const l = label(h.name, h.lrr);
+    if(!map.has(l)) map.set(l, { lrr: h.lrr || '', name: h.name });
+  });
+  return map;
+}
+
+// Refreshes the <datalist> of searchable gateway names/LRR ids -- called
+// whenever the Project Trends section (re)renders, so it stays current
+// after every sync.
+function populateGatewayTrendOptions(){
+  const el = document.getElementById('noc_gwTrend_options');
+  if(!el) return;
+  const labels = Array.from(gatewayTrendCandidates().keys()).sort((a,b) => a.localeCompare(b));
+  el.innerHTML = labels.map(l => `<option value="${l.replace(/"/g,'&quot;')}"></option>`).join('');
+}
+
+// Fires on every keystroke in the search box. Only actually selects a
+// gateway once the typed text exactly matches one of the datalist options
+// (i.e. the user picked one from the list, or typed the full label) --
+// otherwise it just waits for more input instead of guessing a partial match.
+function onGatewayTrendSearchInput(){
+  const input = document.getElementById('noc_gwTrend_search');
+  const val = input ? input.value.trim() : '';
+  if(!val){ clearGatewayTrendSelection(); return; }
+  const match = gatewayTrendCandidates().get(val);
+  if(match){
+    _selectedGatewayTrend = match;
+    renderGatewayTrendChart();
+  }
+  // Not an exact match yet -- leave whatever was last selected on screen
+  // rather than clearing the chart on every keystroke while still typing.
+}
+
+// Clears the current gateway-trend search/selection and hides its chart.
+function clearGatewayTrendSelection(){
+  _selectedGatewayTrend = null;
+  const input = document.getElementById('noc_gwTrend_search');
+  if(input) input.value = '';
+  const wrap = document.getElementById('noc_gwTrendChartWrap');
+  if(wrap) wrap.style.display = 'none';
+  const statusEl = document.getElementById('noc_gwTrendStatus');
+  if(statusEl) statusEl.textContent = '';
+  if(_gwTrendChart){ _gwTrendChart.destroy(); _gwTrendChart = null; }
+}
+
+// Renders the selected gateway's active/inactive trend as a stepped line
+// (1 = active, 0 = inactive/unknown), using the same quick-range/custom
+// date filter as the Project Trends chart above. Rebuilt every time that
+// range changes, a new search is selected, or fresh history comes in.
+function renderGatewayTrendChart(){
+  const wrap = document.getElementById('noc_gwTrendChartWrap');
+  const canvas = document.getElementById('noc_gwTrendChart');
+  const statusEl = document.getElementById('noc_gwTrendStatus');
+  if(!wrap || !canvas || typeof Chart === 'undefined') return;
+  if(!_selectedGatewayTrend){ wrap.style.display = 'none'; if(statusEl) statusEl.textContent = ''; return; }
+
+  const { lrr, name } = _selectedGatewayTrend;
+  let entries = state.live.statusHistory.filter(h => (lrr && h.lrr === lrr) || (!lrr && h.name === name));
+  // Apply the same time-range filter used by Project Trends above (shared
+  // Range chips / custom date inputs -- there's only one range control for
+  // the whole section).
+  const opt = PROJECT_RANGE_OPTIONS.find(o => o.key === _projectTrendRange);
+  if(_projectTrendRange === 'custom'){
+    const fromEl = document.getElementById('noc_projectRangeFrom');
+    const toEl = document.getElementById('noc_projectRangeTo');
+    const from = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00').getTime() : -Infinity;
+    const to = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59').getTime() : Infinity;
+    entries = entries.filter(h => { const t = new Date(h.ts).getTime(); return t >= from && t <= to; });
+  } else if(opt && opt.ms){
+    const cutoff = Date.now() - opt.ms;
+    entries = entries.filter(h => new Date(h.ts).getTime() >= cutoff);
+  }
+  // history is newest-first; the chart wants oldest-first.
+  entries = entries.slice().sort((a, b) => new Date(a.ts) - new Date(b.ts));
+
+  if(entries.length === 0){
+    wrap.style.display = 'none';
+    if(statusEl) statusEl.textContent = `No status-change history for "${name}" in this range yet.`;
+    if(_gwTrendChart){ _gwTrendChart.destroy(); _gwTrendChart = null; }
+    return;
+  }
+
+  const toVal = s => s === 'active' ? 1 : 0;
+  const labels = entries.map(h => new Date(h.ts).toLocaleString());
+  const data = entries.map(h => toVal(h.to));
+  // Also plot the gateway's live current status as the final point, so the
+  // line visibly continues up to "now" instead of stopping at its last
+  // recorded flip.
+  const live = state.live.gateways.find(g => (lrr && g.lrr === lrr) || (!lrr && g.name === name));
+  if(live){
+    labels.push('Now');
+    data.push(toVal(live.status));
+  }
+
+  wrap.style.display = '';
+  if(statusEl) statusEl.textContent = `${name}${lrr ? ' (' + lrr + ')' : ''} -- ${entries.length} status change${entries.length === 1 ? '' : 's'} in this range.`;
+
+  if(_gwTrendChart){ _gwTrendChart.destroy(); }
+  _gwTrendChart = new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [{
+      label: name,
+      data,
+      borderColor: '#2ea043', backgroundColor: '#2ea043',
+      borderWidth: 3, pointRadius: 4, pointHoverRadius: 6,
+      pointBackgroundColor: data.map(v => v ? '#2ea043' : '#f85149'),
+      pointBorderColor: '#0d1117', pointBorderWidth: 2,
+      stepped: 'before', fill: false
+    }] },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', axis: 'x', intersect: false },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          mode: 'nearest', intersect: false,
+          callbacks: { label: (ctx) => ctx.parsed.y ? 'Active' : 'Inactive' }
+        }
+      },
+      scales: {
+        x: { ticks: { color: '#8b949e', maxRotation: 45, minRotation: 45, autoSkip: true, maxTicksLimit: 12, font: { size: 9.5 } }, grid: { color: '#30363d' } },
+        y: { min: -0.1, max: 1.1, ticks: { color: '#8b949e', stepSize: 1, callback: v => v === 1 ? 'Active' : (v === 0 ? 'Inactive' : ''), font: { size: 9.5 } }, grid: { color: '#30363d' } }
+      }
+    }
+  });
+}
+// Same collapse behavior for "Gateway Trend Search".
+function toggleNocGwTrendSection(){
+  const body = document.getElementById('noc_gwTrend_section_body');
+  const btn = document.getElementById('noc_gwTrend_toggle_btn');
+  const hidden = body.style.display === 'none';
+  body.style.display = hidden ? '' : 'none';
+  btn.textContent = hidden ? 'Hide' : 'Show';
+  if(hidden){ populateGatewayTrendOptions(); renderGatewayTrendChart(); }
 }
 
 // Tracks which gateways already have an active diagnosis alert fired, so a
