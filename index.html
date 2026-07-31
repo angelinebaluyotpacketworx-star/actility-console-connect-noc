@@ -765,7 +765,7 @@
         </div>
         <div id="noc_gwTrend_section_body">
         <div class="info-box" style="border-left-color:var(--accent);">
-          Search for one or more specific gateways to compare their active/inactive trends on one chart, built from status-change history (Recent Status Changes below). Optionally narrow the search to one project tag first. Uses the same Range filter as Project Trends above.
+          Search for one or more specific gateways to compare their active/inactive trends on one chart, built from status-change history (Recent Status Changes below). Optionally narrow the search to one project tag first. Has its own time-range filter, independent of Project Trends above.
         </div>
         <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
           <label style="margin:0;font-size:11px;color:var(--sub);white-space:nowrap;">Tag:</label>
@@ -787,6 +787,15 @@
           <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="clearGatewayTrendSelection()">Clear all</button>
         </div>
         <div id="noc_gwTrendSelectedChips" class="filter-chips" style="margin-top:0;margin-bottom:8px;"></div>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+          <span style="font-size:10.5px;color:var(--sub);">Range:</span>
+          <div id="noc_gwTrendRangeChips" class="filter-chips" style="margin-top:0;"></div>
+          <span style="width:1px;height:16px;background:var(--line);"></span>
+          <input type="date" id="noc_gwTrendRangeFrom" style="width:auto;padding:4px 7px;font-size:10.5px;">
+          <span style="font-size:10.5px;color:var(--sub);">to</span>
+          <input type="date" id="noc_gwTrendRangeTo" style="width:auto;padding:4px 7px;font-size:10.5px;">
+          <button type="button" style="background:none;border:1px solid var(--line);color:var(--sub);padding:4px 10px;border-radius:10px;font-size:10.5px;cursor:pointer;" onclick="applyGwTrendCustomRange()">Apply</button>
+        </div>
         <div id="noc_gwTrendStatus" style="font-size:10.5px;color:var(--sub);margin-bottom:8px;"></div>
         <div id="noc_gwTrendChartWrap" style="position:relative;height:260px;background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:10px;display:none;">
           <canvas id="noc_gwTrendChart"></canvas>
@@ -1389,6 +1398,7 @@ async function renderProjectTrendsChart(){
   if(!canvas || typeof Chart === 'undefined') return;
   renderProjectRangeChips();
   populateGatewayTrendOptions();
+  renderGwTrendRangeChips();
   renderGatewayTrendChart(); // shares the same Range chips/custom dates, so keep it in sync
   const myToken = ++_projectTrendRenderToken;
   const snapshots = await getFilteredProjectSnapshots();
@@ -1460,6 +1470,40 @@ async function clearProjectSnapshots(){
 let _selectedGatewayTrends = []; // [{ lrr, name }, ...]
 let _gwTrendTagFilter = ''; // '' = all tags
 let _gwTrendChart = null;
+
+// ---- time-range filter, independent of the Project Trends range above ----
+let _gwTrendRange = 'all'; // '1h' | '1d' | '7d' | '30d' | 'all' | 'custom'
+const GW_TREND_RANGE_OPTIONS = [
+  { key: '1h', label: '1H', ms: 60 * 60 * 1000 },
+  { key: '1d', label: '1 Day', ms: 24 * 60 * 60 * 1000 },
+  { key: '7d', label: '7 Days', ms: 7 * 24 * 60 * 60 * 1000 },
+  { key: '30d', label: '30 Days', ms: 30 * 24 * 60 * 60 * 1000 },
+  { key: 'all', label: 'All', ms: null }
+];
+function setGwTrendRange(key){
+  _gwTrendRange = key;
+  renderGwTrendRangeChips();
+  renderGatewayTrendChart();
+}
+// Reads the From/To date inputs and switches into custom-range mode. Either
+// end can be left blank to mean "no lower/upper bound".
+function applyGwTrendCustomRange(){
+  const fromEl = document.getElementById('noc_gwTrendRangeFrom');
+  const toEl = document.getElementById('noc_gwTrendRangeTo');
+  if(!fromEl || !toEl || (!fromEl.value && !toEl.value)) return;
+  _gwTrendRange = 'custom';
+  renderGwTrendRangeChips();
+  renderGatewayTrendChart();
+}
+// Draws the Range chip row (1H/1 Day/7 Days/30 Days/All), highlighting
+// whichever one is active -- same "chip.active" pattern used elsewhere.
+function renderGwTrendRangeChips(){
+  const el = document.getElementById('noc_gwTrendRangeChips');
+  if(!el) return;
+  el.innerHTML = GW_TREND_RANGE_OPTIONS.map(o =>
+    `<span class="chip ${_gwTrendRange === o.key ? 'active' : ''}" onclick="setGwTrendRange('${o.key}')">${o.label}</span>`
+  ).join('');
+}
 
 // Builds the {label -> {lrr,name}} lookup used both for the <datalist>
 // options and for resolving what the user typed back into a specific
@@ -1587,14 +1631,14 @@ function renderGatewayTrendChart(){
     return;
   }
 
-  // Resolve the shared Range chips / custom date inputs (same control used
-  // by Project Trends above -- there's only one range control for the
-  // whole section) into a [from, to] window in epoch ms.
-  const opt = PROJECT_RANGE_OPTIONS.find(o => o.key === _projectTrendRange);
+  // Resolve this section's own Range chips / custom date inputs (separate
+  // from -- and independent of -- the Project Trends range control above)
+  // into a [from, to] window in epoch ms.
+  const opt = GW_TREND_RANGE_OPTIONS.find(o => o.key === _gwTrendRange);
   let rangeFrom = -Infinity, rangeTo = Infinity;
-  if(_projectTrendRange === 'custom'){
-    const fromEl = document.getElementById('noc_projectRangeFrom');
-    const toEl = document.getElementById('noc_projectRangeTo');
+  if(_gwTrendRange === 'custom'){
+    const fromEl = document.getElementById('noc_gwTrendRangeFrom');
+    const toEl = document.getElementById('noc_gwTrendRangeTo');
     rangeFrom = fromEl && fromEl.value ? new Date(fromEl.value + 'T00:00:00').getTime() : -Infinity;
     rangeTo = toEl && toEl.value ? new Date(toEl.value + 'T23:59:59').getTime() : Infinity;
   } else if(opt && opt.ms){
@@ -1672,7 +1716,7 @@ function toggleNocGwTrendSection(){
   const hidden = body.style.display === 'none';
   body.style.display = hidden ? '' : 'none';
   btn.textContent = hidden ? 'Hide' : 'Show';
-  if(hidden){ populateGatewayTrendOptions(); renderGatewayTrendChips(); renderGatewayTrendChart(); }
+  if(hidden){ populateGatewayTrendOptions(); renderGatewayTrendChips(); renderGwTrendRangeChips(); renderGatewayTrendChart(); }
 }
 
 // Tracks which gateways already have an active diagnosis alert fired, so a
