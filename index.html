@@ -2475,16 +2475,29 @@ async function exportPNG(tab){
 
 // ============ PERSISTENCE ============
 async function save(tab){
-  try{ if(window.storage) await window.storage.set(state[tab].storageKey, JSON.stringify(state[tab].gateways)); }
+  const payload = JSON.stringify(state[tab].gateways);
+  // Primary persistence: this browser's own localStorage. This is what
+  // actually survives a reload on a plain static deployment -- window.storage
+  // (an artifact-sandbox-only API) is not present here, so relying on it
+  // alone silently dropped every gateway list on refresh.
+  try{ localStorage.setItem(state[tab].storageKey, payload); }
+  catch(e){ console.warn('localStorage save failed', e); }
+  // Optional extra: if some host environment does provide window.storage, use it too.
+  try{ if(window.storage) await window.storage.set(state[tab].storageKey, payload); }
   catch(e){ console.warn('Storage save failed', e); }
 }
-// Loads a tab's gateway list from the backend storage API, if configured.
+// Loads a tab's gateway list, preferring window.storage (if present) and
+// falling back to this browser's own localStorage.
 async function load(tab){
   try{
     if(window.storage){
       const res = await window.storage.get(state[tab].storageKey);
       if(res && res.value){ state[tab].gateways = JSON.parse(res.value); return true; }
     }
+  }catch(e){}
+  try{
+    const raw = localStorage.getItem(state[tab].storageKey);
+    if(raw){ state[tab].gateways = JSON.parse(raw); return true; }
   }catch(e){}
   return false;
 }
@@ -4379,31 +4392,40 @@ function deleteFpItem(kind, id){
 
 // Persists the floor plan (image, scale, gateways, walls) to backend storage.
 async function saveFloorPlan(){
-  try{
-    if(window.storage){
-      // Note: storage has a 5MB limit per key. Large floor plan images may fail — that's honest.
-      const payload = JSON.stringify({
-        imageUrl: fpState.imageUrl,
-        imageWidth: fpState.imageWidth,
-        imageHeight: fpState.imageHeight,
-        metersPerPixel: fpState.metersPerPixel,
-        gateways: fpState.gateways,
-        walls: fpState.walls
-      });
-      await window.storage.set(fpState.storageKey, payload);
-    }
-  }catch(e){
+  // Note: localStorage has roughly a 5MB limit per origin. Large floor plan
+  // images may fail to save -- that's honest, and caught below.
+  const payload = JSON.stringify({
+    imageUrl: fpState.imageUrl,
+    imageWidth: fpState.imageWidth,
+    imageHeight: fpState.imageHeight,
+    metersPerPixel: fpState.metersPerPixel,
+    gateways: fpState.gateways,
+    walls: fpState.walls
+  });
+  try{ localStorage.setItem(fpState.storageKey, payload); }
+  catch(e){ console.warn('Floor plan save failed (may be too large for localStorage):', e); }
+  try{ if(window.storage) await window.storage.set(fpState.storageKey, payload); }
+  catch(e){
     console.warn('Floor plan save failed (may be too large for storage):', e);
   }
 }
 
-// Restores the floor plan from backend storage on page load.
+// Restores the floor plan, preferring window.storage (if present) and
+// falling back to this browser's own localStorage.
 async function loadFloorPlan(){
+  let raw = null;
   try{
     if(window.storage){
       const res = await window.storage.get(fpState.storageKey);
-      if(res && res.value){
-        const p = JSON.parse(res.value);
+      if(res && res.value) raw = res.value;
+    }
+  }catch(e){}
+  if(raw === null){
+    try{ raw = localStorage.getItem(fpState.storageKey); }catch(e){}
+  }
+  try{
+      if(raw){
+        const p = JSON.parse(raw);
         fpState.imageUrl = p.imageUrl;
         fpState.imageWidth = p.imageWidth;
         fpState.imageHeight = p.imageHeight;
@@ -4416,7 +4438,6 @@ async function loadFloorPlan(){
           document.getElementById('fp_wallBtn').disabled = false;
         }
       }
-    }
   }catch(e){}
 }
 
